@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MirrorMind AI Representation Optimizer API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: analyze
+    description: Store analysis operations
+  - name: simulate
+    description: AI persona simulation operations
+  - name: compare
+    description: Competitor comparison operations
+  - name: fix
+    description: Fix recommendations operations
 paths:
   /healthz:
     get:
@@ -24,6 +32,117 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /analyze:
+    post:
+      operationId: analyzeStore
+      tags: [analyze]
+      summary: Analyze a Shopify store
+      description: Fetches store data and runs AI analysis to score AI representation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeStoreBody"
+      responses:
+        "200":
+          description: Analysis complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreAnalysis"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /simulate:
+    post:
+      operationId: simulatePersona
+      tags: [simulate]
+      summary: Simulate how an AI shopping agent perceives the store
+      description: Generates a simulated response from a specific AI persona
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulatePersonaBody"
+      responses:
+        "200":
+          description: Simulation complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaSimulation"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /compare:
+    post:
+      operationId: compareCompetitors
+      tags: [compare]
+      summary: Compare store against competitors
+      description: Analyzes how the store compares to competitors in AI representation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompareCompetitorsBody"
+      responses:
+        "200":
+          description: Comparison complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompetitorComparison"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /fix:
+    post:
+      operationId: generateFixes
+      tags: [fix]
+      summary: Generate fix recommendations
+      description: Creates a ranked, actionable plan to improve AI representation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateFixesBody"
+      responses:
+        "200":
+          description: Fixes generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FixPlan"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +153,354 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+      required:
+        - error
+
+    AnalyzeStoreBody:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+          description: Shopify store domain (e.g. mystore.myshopify.com)
+        adminToken:
+          type: string
+          description: Shopify Admin API token (optional, for deeper access)
+      required:
+        - storeDomain
+
+    StoreAnalysis:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        storeName:
+          type: string
+        overallScore:
+          type: number
+          description: Overall AI representation score 0-100
+        dimensions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreDimension"
+        productCount:
+          type: integer
+        topProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+        storeDescription:
+          type: string
+        analysisTimestamp:
+          type: string
+        gaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Gap"
+      required:
+        - storeDomain
+        - storeName
+        - overallScore
+        - dimensions
+        - productCount
+        - topProducts
+        - storeDescription
+        - analysisTimestamp
+        - gaps
+
+    ScoreDimension:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Dimension name (e.g. Product Descriptions, SEO, Trust Signals)
+        score:
+          type: number
+          description: Score 0-100
+        weight:
+          type: number
+          description: Weight of this dimension in overall score
+        explanation:
+          type: string
+      required:
+        - name
+        - score
+        - weight
+        - explanation
+
+    ProductSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        aiScore:
+          type: number
+        issues:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - title
+        - aiScore
+        - issues
+
+    Gap:
+      type: object
+      properties:
+        category:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        impact:
+          type: string
+        affectedCount:
+          type: integer
+      required:
+        - category
+        - title
+        - severity
+        - impact
+        - affectedCount
+
+    SimulatePersonaBody:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        adminToken:
+          type: string
+        persona:
+          type: string
+          enum: [chatgpt, perplexity, google]
+          description: Which AI shopping agent persona to simulate
+        query:
+          type: string
+          description: The shopping query to simulate
+      required:
+        - storeDomain
+        - persona
+        - query
+
+    PersonaSimulation:
+      type: object
+      properties:
+        persona:
+          type: string
+        query:
+          type: string
+        storeDomain:
+          type: string
+        wouldRecommend:
+          type: boolean
+        confidenceScore:
+          type: number
+        simulatedResponse:
+          type: string
+          description: What the AI agent would say about this store
+        reasoning:
+          type: string
+          description: Why the AI agent made this decision
+        missingSignals:
+          type: array
+          items:
+            type: string
+          description: What signals the AI agent looks for but couldn't find
+        strengths:
+          type: array
+          items:
+            type: string
+        weaknesses:
+          type: array
+          items:
+            type: string
+      required:
+        - persona
+        - query
+        - storeDomain
+        - wouldRecommend
+        - confidenceScore
+        - simulatedResponse
+        - reasoning
+        - missingSignals
+        - strengths
+        - weaknesses
+
+    CompareCompetitorsBody:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        adminToken:
+          type: string
+        competitorDomains:
+          type: array
+          items:
+            type: string
+          description: List of competitor store domains or URLs
+      required:
+        - storeDomain
+        - competitorDomains
+
+    CompetitorComparison:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        competitors:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompetitorResult"
+        yourScore:
+          type: number
+        averageCompetitorScore:
+          type: number
+        rankPosition:
+          type: integer
+        topOpportunities:
+          type: array
+          items:
+            type: string
+      required:
+        - storeDomain
+        - competitors
+        - yourScore
+        - averageCompetitorScore
+        - rankPosition
+        - topOpportunities
+
+    CompetitorResult:
+      type: object
+      properties:
+        domain:
+          type: string
+        name:
+          type: string
+        overallScore:
+          type: number
+        dimensions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoreDimension"
+        strengths:
+          type: array
+          items:
+            type: string
+      required:
+        - domain
+        - name
+        - overallScore
+        - dimensions
+        - strengths
+
+    GenerateFixesBody:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        adminToken:
+          type: string
+        analysisData:
+          description: Previous analysis data to base fixes on
+          type: object
+          additionalProperties: true
+      required:
+        - storeDomain
+
+    FixPlan:
+      type: object
+      properties:
+        storeDomain:
+          type: string
+        totalFixes:
+          type: integer
+        estimatedScoreGain:
+          type: number
+        fixes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Fix"
+        quickWins:
+          type: array
+          items:
+            $ref: "#/components/schemas/Fix"
+        priorityMatrix:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriorityItem"
+      required:
+        - storeDomain
+        - totalFixes
+        - estimatedScoreGain
+        - fixes
+        - quickWins
+        - priorityMatrix
+
+    Fix:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+        effort:
+          type: string
+          enum: [low, medium, high]
+        impact:
+          type: string
+          enum: [low, medium, high]
+        scoreGain:
+          type: number
+        description:
+          type: string
+        actionSteps:
+          type: array
+          items:
+            type: string
+        exampleBefore:
+          type: string
+        exampleAfter:
+          type: string
+      required:
+        - id
+        - title
+        - category
+        - priority
+        - effort
+        - impact
+        - scoreGain
+        - description
+        - actionSteps
+
+    PriorityItem:
+      type: object
+      properties:
+        fixId:
+          type: string
+        effort:
+          type: string
+        impact:
+          type: string
+        rank:
+          type: integer
+      required:
+        - fixId
+        - effort
+        - impact
+        - rank
