@@ -12,27 +12,54 @@ router.post("/analyze", async (req, res): Promise<void> => {
     return;
   }
 
-  const { storeDomain, adminToken } = parsed.data;
+  // Accept full URLs (https://myfrido.com) or bare domains (myfrido.com)
+  const rawInput = parsed.data.storeDomain.trim();
+  const { adminToken } = parsed.data;
 
-  req.log.info({ storeDomain }, "Starting store analysis");
+  // Normalize: strip protocol and trailing slash to get a clean domain
+  const storeDomain = rawInput
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "")
+    .trim();
 
-  const storeData = await fetchStoreData(storeDomain, adminToken ?? undefined);
-  const scoreResult = await scoreStore(storeData);
+  req.log.info({ storeDomain, rawInput }, "Starting store analysis");
 
-  const response = AnalyzeStoreResponse.parse({
-    storeDomain: storeData.domain,
-    storeName: storeData.name,
-    overallScore: scoreResult.overallScore,
-    dimensions: scoreResult.dimensions,
-    productCount: storeData.productCount,
-    topProducts: scoreResult.scoredProducts.slice(0, 10),
-    storeDescription: scoreResult.storeDescription,
-    analysisTimestamp: new Date().toISOString(),
-    gaps: scoreResult.gaps,
-  });
+  try {
+    const storeData = await fetchStoreData(storeDomain, adminToken ?? undefined);
+    req.log.info(
+      {
+        storeDomain,
+        productCount: storeData.productCount,
+        accessedViaApi: storeData.accessedViaApi,
+        hasScrapedMetadata: !!storeData.scrapedMetadata,
+      },
+      "Store data fetched",
+    );
 
-  req.log.info({ storeDomain, overallScore: scoreResult.overallScore }, "Analysis complete");
-  res.json(response);
+    const scoreResult = await scoreStore(storeData);
+    req.log.info({ storeDomain, overallScore: scoreResult.overallScore }, "Scoring complete");
+
+    const response = AnalyzeStoreResponse.parse({
+      storeDomain: storeData.domain,
+      storeName: storeData.name,
+      overallScore: scoreResult.overallScore,
+      dimensions: scoreResult.dimensions,
+      productCount: storeData.productCount,
+      topProducts: scoreResult.scoredProducts.slice(0, 10),
+      storeDescription: scoreResult.storeDescription,
+      analysisTimestamp: new Date().toISOString(),
+      gaps: scoreResult.gaps,
+    });
+
+    req.log.info({ storeDomain, overallScore: scoreResult.overallScore }, "Analysis complete");
+    res.json(response);
+  } catch (err) {
+    req.log.error({ err, storeDomain }, "Analysis failed");
+    res.status(500).json({
+      error: "Analysis failed",
+      details: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
 });
 
 export default router;

@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield } from "lucide-react";
+
+const EXAMPLE_STORES = [
+  "myfrido.com",
+  "allbirds.com",
+  "gymshark.com",
+];
 
 export default function Home() {
   const [, setLocation] = useLocation();
@@ -34,8 +40,10 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    if (!domain.trim()) return;
-    analyze.mutate({ data: { storeDomain: domain.trim(), adminToken: token.trim() || undefined } });
+    const input = domain.trim();
+    if (!input) return;
+    // Strip protocol if user pastes a full URL — backend handles both
+    analyze.mutate({ data: { storeDomain: input, adminToken: token.trim() || undefined } });
   };
 
   return (
@@ -68,20 +76,33 @@ export default function Home() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="store-domain">Shopify Store Domain</Label>
+              <Label htmlFor="store-domain">Store URL or Domain</Label>
               <Input
                 id="store-domain"
                 data-testid="input-store-domain"
                 type="text"
-                placeholder="yourstore.myshopify.com"
+                placeholder="https://myfrido.com or mystore.myshopify.com"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 disabled={analyze.isPending}
                 className="font-mono"
               />
-              <p className="text-xs text-muted-foreground">
-                Public storefront is accessed automatically — no token required for basic analysis.
-              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-xs text-muted-foreground">
+                  Works with any public store — no API token needed for basic analysis. Try:
+                </p>
+                {EXAMPLE_STORES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => { setDomain(s); setErrorMsg(null); }}
+                    className="text-xs text-primary hover:underline font-mono disabled:opacity-50"
+                    disabled={analyze.isPending}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <button
@@ -91,7 +112,7 @@ export default function Home() {
               data-testid="toggle-admin-token"
             >
               {showToken ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              {showToken ? "Hide" : "Add"} Admin API token for deeper analysis
+              {showToken ? "Hide" : "Add"} Shopify Admin API token for deeper analysis
             </button>
 
             {showToken && (
@@ -107,6 +128,9 @@ export default function Home() {
                   disabled={analyze.isPending}
                   className="font-mono"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Unlocks full product data, policies, and metafield analysis via the Shopify Admin API.
+                </p>
               </div>
             )}
 
@@ -126,7 +150,7 @@ export default function Home() {
               {analyze.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing AI representation...
+                  Analyzing AI representation… (10–20s)
                 </>
               ) : (
                 "Analyze Store"
@@ -136,11 +160,12 @@ export default function Home() {
 
           <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
             {[
-              { label: "ChatGPT Shopping", desc: "GPT-4o powered agent" },
-              { label: "Perplexity", desc: "Web-first discovery" },
-              { label: "Google Shopping AI", desc: "Schema-driven ranking" },
-            ].map(({ label, desc }) => (
+              { label: "ChatGPT Shopping", desc: "GPT-4o powered agent", Icon: Sparkles },
+              { label: "Perplexity", desc: "Web-first discovery", Icon: Zap },
+              { label: "Google Shopping AI", desc: "Schema-driven ranking", Icon: Shield },
+            ].map(({ label, desc, Icon }) => (
               <div key={label} className="text-center space-y-1">
+                <Icon className="h-4 w-4 mx-auto text-primary mb-1" />
                 <div className="text-xs font-medium text-foreground">{label}</div>
                 <div className="text-xs text-muted-foreground">{desc}</div>
               </div>

@@ -30,6 +30,16 @@ export interface ShopifyStoreData {
     privacy?: string;
   };
   accessedViaApi: boolean;
+  scrapedMetadata?: {
+    title: string;
+    metaDescription: string;
+    headings: string[];
+    ogTags: Record<string, string>;
+    hasSchemaOrg: boolean;
+    hasOgTags: boolean;
+    schemaTypes: string[];
+    estimatedProductCount: number;
+  };
 }
 
 async function fetchShopifyApi(
@@ -96,28 +106,183 @@ async function scrapeStorefront(domain: string): Promise<ShopifyStoreData> {
   const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
   const baseUrl = `https://${cleanDomain}`;
 
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+
+  // STEP 1: Try /products.json (works for actual Shopify myshopify.com stores and some custom domains)
   try {
-    const productsJsonUrl = `${baseUrl}/products.json?limit=30`;
-    const response = await fetch(productsJsonUrl, {
-      headers: { Accept: "application/json" },
+    const productsUrl = `${baseUrl}/products.json?limit=30`;
+    const res = await fetch(productsUrl, {
+      headers: { ...headers, Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
     });
 
-    if (!response.ok) {
-      throw new Error(`Could not access store at ${cleanDomain}`);
+    if (res.ok) {
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json") || contentType.includes("text/json")) {
+        const data = (await res.json()) as { products?: ShopifyProduct[] };
+        if (data.products && Array.isArray(data.products) && data.products.length > 0) {
+          logger.info({ domain, count: data.products.length }, "Got products via /products.json");
+          const storeName = cleanDomain.split(".")[0] ?? cleanDomain;
+          return {
+            name: storeName.charAt(0).toUpperCase() + storeName.slice(1),
+            domain: cleanDomain,
+            products: data.products.slice(0, 30),
+            productCount: data.products.length,
+            accessedViaApi: false,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    logger.info({ domain }, "products.json unavailable, falling back to HTML scrape");
+  }
+
+  // STEP 2: HTML scraping for non-standard Shopify and custom domains
+  logger.info({ domain }, "Starting full HTML scrape");
+
+  try {
+    const res = await fetch(baseUrl, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
 
-    const data = (await response.json()) as { products: ShopifyProduct[] };
-    const storeName = cleanDomain.split(".")[0] ?? cleanDomain;
+    const html = await res.text();
+    logger.info({ domain, htmlLength: html.length }, "HTML fetched, parsing");
+
+    // Extract page title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const pageTitle = titleMatch ? titleMatch[1]!.trim() : "";
+
+    // Extract meta description
+    const metaDescMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)
+      ?? html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i);
+    const metaDescription = metaDescMatch ? metaDescMatch[1]!.trim() : "";
+
+    // Extract OG tags
+    const ogTags: Record<string, string> = {};
+    const ogMatches = html.matchAll(/<meta[^>]+property=["'](og:[^"']+)["'][^>]+content=["']([^"']*?)["']/gi);
+    for (const match of ogMatches) {
+      ogTags[match[1]!] = match[2]!;
+    }
+    // Also try reversed attribute order
+    const ogMatchesRev = html.matchAll(/<meta[^>]+content=["']([^"']*?)["'][^>]+property=["'](og:[^"']+)["']/gi);
+    for (const match of ogMatchesRev) {
+      if (!ogTags[match[2]!]) ogTags[match[2]!] = match[1]!;
+    }
+
+    // Extract schema.org JSON-LD
+    const schemaMatches = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+    const schemaBlocks: Array<Record<string, unknown>> = [];
+    for (const match of schemaMatches) {
+      try {
+        const parsed = JSON.parse(match[1]!) as Record<string, unknown>;
+        schemaBlocks.push(parsed);
+      } catch {
+        // skip malformed
+      }
+    }
+    const schemaTypes = schemaBlocks.map((b) => (b["@type"] as string) ?? "unknown");
+
+    // Extract headings (h1, h2, h3) — strip HTML tags
+    const headings: string[] = [];
+    const headingMatches = html.matchAll(/<h[123][^>]*>([\s\S]*?)<\/h[123]>/gi);
+    for (const match of headingMatches) {
+      const text = match[1]!.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (text && text.length > 5 && text.length < 200) {
+        headings.push(text);
+      }
+    }
+    const topHeadings = headings.slice(0, 15);
+
+    // Extract product-like text blocks from paragraphs / divs
+    const productSections: string[] = [];
+    const productKeywords = ["product", "price", "$", "buy", "add to cart", "shop", "collection", "item", "sale", "offer"];
+    const blockMatches = html.matchAll(/<(?:p|div|section|article)[^>]*>([\s\S]{50,500}?)<\/(?:p|div|section|article)>/gi);
+    for (const match of blockMatches) {
+      const text = match[1]!.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+      if (text.length > 50 && text.length < 500) {
+        const lower = text.toLowerCase();
+        if (productKeywords.some((kw) => lower.includes(kw))) {
+          productSections.push(text);
+        }
+      }
+      if (productSections.length >= 15) break;
+    }
+
+    // Count price signals
+    const priceMatches = html.match(/\$[\d,]+\.?\d*/g) ?? [];
+    const estimatedProductCount = Math.max(priceMatches.length, productSections.length);
+
+    // Determine store name
+    let shopName = ogTags["og:site_name"] ?? "";
+    if (!shopName) {
+      // Try title: "Store Name | Tagline" or "Store Name - Tagline"
+      shopName = pageTitle.split(/[|\-–]/)[0]?.trim() ?? "";
+    }
+    if (!shopName) {
+      const domainParts = cleanDomain.split(".");
+      shopName = domainParts[0] ?? cleanDomain;
+      shopName = shopName.charAt(0).toUpperCase() + shopName.slice(1);
+    }
+
+    // Build store description
+    const storeDescription = metaDescription || ogTags["og:description"] || topHeadings[0] || "";
+
+    // Synthesize products from scraped product sections
+    const syntheticProducts: ShopifyProduct[] = productSections.map((section, i) => ({
+      id: `scraped_${i}`,
+      title: topHeadings[i + 1] ?? `Product ${i + 1}`,
+      body_html: `<p>${section}</p>`,
+      vendor: shopName,
+      product_type: "Product",
+      tags: "",
+      variants: [{ price: "N/A", sku: `sku_${i}`, inventory_quantity: 1 }],
+      images: [],
+    }));
+
+    const scrapedMetadata = {
+      title: pageTitle,
+      metaDescription,
+      headings: topHeadings,
+      ogTags,
+      hasSchemaOrg: schemaBlocks.length > 0,
+      hasOgTags: Object.keys(ogTags).length > 0,
+      schemaTypes,
+      estimatedProductCount,
+    };
+
+    logger.info(
+      {
+        domain,
+        shopName,
+        productSections: productSections.length,
+        headings: topHeadings.length,
+        schemaBlocks: schemaBlocks.length,
+        ogTags: Object.keys(ogTags).length,
+        prices: priceMatches.length,
+      },
+      "HTML scrape complete",
+    );
 
     return {
-      name: storeName.charAt(0).toUpperCase() + storeName.slice(1),
+      name: shopName,
       domain: cleanDomain,
-      products: data.products.slice(0, 30),
-      productCount: data.products.length,
+      description: storeDescription,
+      products: syntheticProducts,
+      productCount: estimatedProductCount,
       accessedViaApi: false,
+      scrapedMetadata,
     };
   } catch (err) {
-    logger.warn({ err, domain }, "Could not scrape store, using domain only");
+    logger.error({ err, domain }, "HTML scrape failed completely");
     const storeName = cleanDomain.split(".")[0] ?? cleanDomain;
     return {
       name: storeName.charAt(0).toUpperCase() + storeName.slice(1),
