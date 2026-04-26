@@ -1,0 +1,129 @@
+You are building MirrorMind — an AI Representation Optimizer for Shopify merchants.
+This is a hackathon submission for Track 5 (Advanced): AI Representation Optimizer.
+
+Build the complete full-stack application end-to-end. Do not stop until all files
+are created, dependencies installed, and the app runs successfully on Replit.
+
+---
+
+## WHAT THIS APP DOES
+
+MirrorMind shows Shopify store owners exactly how AI shopping agents
+(ChatGPT Shopping, Perplexity, Google Shopping AI) perceive their store —
+and gives them a ranked, actionable plan to improve their AI representation
+before they lose recommendations and revenue.
+
+---
+
+## REPLIT ENVIRONMENT RULES
+
+- Runtime: Python 3.11 (backend) + Node 20 (frontend, Vite dev server)
+- Use pyproject.toml or requirements.txt for Python deps
+- Use package.json for frontend deps
+- All secrets go in Replit Secrets (never in code files)
+- Backend runs on port 8000, frontend on port 5173
+- Configure .replit to run both concurrently via a shell script
+- Use SQLite for DB (file: mirrormind.db in project root)
+- NEVER hardcode any API key, token, or secret anywhere in code
+
+---
+
+## REPLIT SECRETS TO CREATE
+
+Tell the user to add these in the Secrets tab before running:
+
+  AI_API_KEY          → Get free at console.groq.com
+  AI_BASE_URL         → https://api.groq.com/openai/v1
+  AI_MODEL            → llama-3.3-70b-versatile
+  DATABASE_URL        → sqlite+aiosqlite:///mirrormind.db
+  ENVIRONMENT         → development
+
+Tell the user: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_TOKEN are entered
+in the UI at runtime — they are NOT stored in Secrets or DB.
+
+---
+
+## PROJECT STRUCTURE TO CREATE
+
+mirrormind/
+├── .replit
+├── replit.nix
+├── run.sh
+├── requirements.txt
+├── backend/
+│   └── app/
+│       ├── main.py
+│       ├── routers/
+│       │   ├── analyze.py
+│       │   ├── simulate.py
+│       │   ├── compare.py
+│       │   └── fix.py
+│       └── services/
+│           ├── ai_client.py
+│           ├── ai_prompts.py
+│           ├── shopify.py
+│           ├── scraper.py
+│           ├── scorer.py
+│           ├── gap_engine.py
+│           ├── temporal.py
+│           └── persona.py
+└── frontend/
+    ├── index.html
+    ├── vite.config.js
+    ├── package.json
+    └── src/
+        ├── main.jsx
+        ├── App.jsx
+        ├── index.css
+        ├── pages/
+        │   ├── Landing.jsx
+        │   ├── Dashboard.jsx
+        │   ├── Simulate.jsx
+        │   └── Compare.jsx
+        └── components/
+            ├── ScoreRing.jsx
+            ├── GapCard.jsx
+            └── PersonaView.jsx
+
+---
+
+## STEP 1 — REPLIT CONFIG FILES
+
+Create .replit:
+```toml
+run = "bash run.sh"
+entrypoint = "run.sh"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["bash", "run.sh"]
+```
+
+Create run.sh:
+```bash
+#!/bin/bash
+echo "Starting MirrorMind..."
+
+# Install Python deps
+pip install -r requirements.txt -q
+
+# Install frontend deps
+cd frontend && npm install --silent && cd ..
+
+# Start backend
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+BACKEND_PID=$!
+
+# Start frontend
+cd frontend && npm run dev -- --host 0.0.0.0 --port 5173 &
+FRONTEND_PID=$!
+
+echo "Backend: http://localhost:8000"
+echo "Frontend: http://localhost:5173"
+
+wait $BACKEND_PID $FRONTEND_PID
+```
+
+Create requirements.txt:
