@@ -1,0 +1,629 @@
+You are fixing the MirrorMind app that currently cannot analyze Shopify stores for AI representation.
+
+The root problems are:
+1. Shopify scraper not implemented — can't fetch real store data from public URLs
+2. Frontend not wired to backend analysis endpoints
+3. Groq token added but not actually used in analysis pipeline
+4. Missing error handling and data flow between scraper → scorer → AI analysis
+
+Your task: Fix the ENTIRE app end-to-end so that a user can enter a store URL like
+https://myfrido.com or https://www.cin7.com and get a full AI representation analysis
+within 10-15 seconds.
+
+---
+
+## REPO CONTEXT
+
+Current repo: https://github.com/paq67/Mirror-Mind
+
+Test stores to analyze:
+- https://www.cin7.com/
+- https://myfrido.com/
+
+Groq token: Already added to Replit Secrets (AI_API_KEY)
+
+Current state: User clicks "analyze" but nothing happens because:
+- Scraper doesn't extract store data from URLs
+- Scorer has no data to score
+- Frontend doesn't handle response correctly
+- Groq isn't actually being called for analysis
+
+---
+
+## CRITICAL FIX REQUIREMENTS
+
+1. The scraper MUST work with PUBLIC Shopify storefronts (no admin token needed)
+2. Scraper extracts: meta tags, Open Graph, schema.org JSON-LD, product descriptions
+3. Extracted data converts to store_data format that scorer can analyze
+4. Scorer uses Groq for semantic consistency (the LLM part)
+5. Gap Engine uses Groq to rank gaps by impact×effort×revenue-risk
+6. Temporal Drift detector uses Groq to find stale signals
+7. Persona Simulator runs 3 concurrent Groq calls (Deal Hunter, Trust Verifier, Lifestyle Matcher)
+8. Frontend sends store_url to POST /analyze/store
+9. Frontend receives analysis result and displays in dashboard
+10. ZERO hardcoded API keys — all from Replit Secrets
+
+---
+
+## EXACT FIXES TO APPLY
+
+### FIX 1: Replace backend/app/services/scraper.py
+
+The current scraper.py doesn't actually extract data.
+Replace it completely with this working version:
+
+```python
+import httpx
+import asyncio
+import logging
+import json as json_lib
+from bs4 import BeautifulSoup
+import re
+
+logger = logging.getLogger(__name__)
+
+async def scrape_storefront(url: str) -> dict:
+    """
+    Scrape a public Shopify storefront and extract real data:
+    - Meta tags (title, description, Open Graph)
+    - Schema.org JSON-LD (Product, Organization)
+    - HTML product descriptions
+    - Images and links
+    """
+    try:
+        # Normalize URL
+        if not url.startswith("http"):
+            url = f"https://{url}"
+        
+        logger.info(f"[SCRAPER] Starting scrape: {url}")
+        
+        # Use realistic User-Agent to avoid blocks
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        logger.info(f"[SCRAPER] HTML fetched, parsing...")
+        
+        # 1. Extract Open Graph tags
+        og_tags = {}
+        for tag in soup.find_all("meta"):
+            prop = tag.get("property", "")
+            name = tag.get("name", "")
+            content = tag.get("content", "")
+            
+            if prop.startswith("og:"):
+                og_tags[prop] = content
+            elif name.startswith("og:"):
+                og_tags[name] = content
+        
+        logger.info(f"[SCRAPER] Found {len(og_tags)} OG tags")
+        
+        # 2. Extract schema.org JSON-LD blocks
+        schema_blocks = []
+        for script in soup.find_all("script", {"type": "application/ld+json"}):
+            try:
+                schema_data = json_lib.loads(script.string)
+                schema_blocks.append(schema_data)
+                logger.info(f"[SCRAPER] Found schema.org type: {schema_data.get('@type', 'unknown')}")
+            except json_lib.JSONDecodeError as e:
+                logger.warning(f"[SCRAPER] Skipped malformed schema.org JSON")
+        
+        # 3. Extract meta tags
+        title = ""
+        if soup.title:
+            title = soup.title.string.strip() if soup.title.string else ""
+        
+        meta_description = ""
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        if meta_desc_tag:
+            meta_description = meta_desc_tag.get("content", "").strip()
+        
+        # 4. Extract all headings
+        headings = []
+        for h in soup.find_all(["h1", "h2", "h3"]):
+            text = h.get_text(strip=True)
+            if text and len(text) > 5 and len(text) < 200:
+                headings.append(text)
+        
+        headings = headings[:15]  # Limit to 15
+        logger.info(f"[SCRAPER] Found {len(headings)} headings")
+        
+        # 5. Extract product-like text blocks
+        product_sections = []
+        for div in soup.find_all(["div", "section", "article"], limit=100):
+            text = div.get_text(strip=True)
+            # Look for product-like content
+            if any(kw in text.lower() for kw in ["product", "price", "$", "buy", "add to cart", "shop", "item"]):
+                if 50 < len(text) < 500:
+                    product_sections.append(text[:300])
+        
+        product_sections = product_sections[:10]  # Limit to 10
+        logger.info(f"[SCRAPER] Found {len(product_sections)} product sections")
+        
+        # 6. Extract all images
+        images = []
+        for img in soup.find_all("img", limit=20):
+            src = img.get("src", "")
+            alt = img.get("alt", "")
+            if src:
+                images.append({"src": src, "alt": alt})
+        
+        # 7. Extract internal links
+        links = []
+        for a in soup.find_all("a", href=True, limit=50):
+            href = a.get("href", "")
+            text = a.get_text(strip=True)
+            if text and href and not href.startswith("javascript"):
+                links.append({"text": text, "href": href})
+        
+        links = links[:10]
+        logger.info(f"[SCRAPER] Found {len(links)} links")
+        
+        # 8. Count price indicators (rough product count estimate)
+        price_pattern = r'\$[\d,]+\.?\d*|\d+\s*USD|\d+\s*dollars'
+        prices_found = len(re.findall(price_pattern, response.text))
+        
+        # 9. Look for FAQ / Help sections
+        faq_text = ""
+        for section in soup.find_all(["section", "div"], limit=50):
+            section_html = str(section)
+            if "faq" in section_html.lower() or "help" in section_html.lower():
+                faq_text = section.get_text(strip=True)[:500]
+                break
+        
+        # 10. Build complete storefront data
+        storefront_data = {
+            "url": url,
+            "status": "success",
+            "title": title,
+            "meta_description": meta_description,
+            "headings": headings,
+            "og_tags": og_tags,
+            "has_og_tags": len(og_tags) > 0,
+            "schema_org": schema_blocks,
+            "has_schema_org": len(schema_blocks) > 0,
+            "product_sections": product_sections,
+            "estimated_product_count": max(prices_found, len(product_sections)),
+            "images_count": len(images),
+            "images": images,
+            "links_count": len(links),
+            "top_links": links,
+            "faq_text": faq_text,
+        }
+        
+        logger.info(f"[SCRAPER] ✓ Successfully scraped {url}")
+        logger.info(f"[SCRAPER] Summary: {len(headings)} headings, {len(product_sections)} products, {prices_found} prices, {len(schema_blocks)} schema blocks")
+        
+        return storefront_data
+    
+    except httpx.HTTPError as e:
+        logger.error(f"[SCRAPER] HTTP error: {e}")
+        return {
+            "url": url,
+            "status": "error",
+            "error": f"HTTP error: {str(e)}",
+            "error_type": "http_error"
+        }
+    except Exception as e:
+        logger.error(f"[SCRAPER] Unexpected error: {e}", exc_info=True)
+        return {
+            "url": url,
+            "status": "error",
+            "error": f"Scrape failed: {str(e)}",
+            "error_type": "unknown_error"
+        }
+
+
+async def extract_store_data_from_scrape(storefront_data: dict) -> dict:
+    """
+    Convert scraped storefront data into store_data format
+    that the scorer and AI analysis pipeline can use.
+    """
+    logger.info(f"[EXTRACT] Converting scraped data to analyzer format...")
+    
+    if storefront_data.get("status") == "error":
+        logger.error(f"[EXTRACT] Scrape had error: {storefront_data.get('error')}")
+        return {
+            "products": [],
+            "policies": {},
+            "shop_info": {"name": "Unknown", "description": ""},
+            "reviews": {"has_reviews": False, "avg_rating": None, "review_count": 0},
+            "storefront_data": storefront_data,
+            "error": storefront_data.get("error", "Unknown error"),
+        }
+    
+    # Extract shop name
+    shop_name = storefront_data.get("og_tags", {}).get("og:site_name", "")
+    if not shop_name:
+        # Fallback: extract from title
+        title = storefront_data.get("title", "")
+        shop_name = title.split("|")[0].strip() if title else "Unknown Store"
+    
+    # Extract description
+    shop_description = storefront_data.get("meta_description", "")
+    if not shop_description:
+        # Fallback: use first heading
+        headings = storefront_data.get("headings", [])
+        shop_description = headings[0] if headings else ""
+    
+    # Build synthetic product list from product sections
+    # (real Shopify data would come from Admin API, but for public stores we scrape)
+    products = []
+    for i, section in enumerate(storefront_data.get("product_sections", [])[:20]):
+        products.append({
+            "id": f"product_{i}",
+            "title": f"Product {i+1}",
+            "description": section,
+            "descriptionHtml": f"<p>{section}</p>",
+            "vendor": shop_name,
+            "productType": "Product",
+            "tags": [],
+            "status": "active",
+            "images": {
+                "edges": [{"node": {"url": img["src"]}} for img in storefront_data.get("images", [])[:3]]
+            },
+            "variants": {
+                "edges": [{
+                    "node": {
+                        "price": "N/A",
+                        "sku": f"sku_{i}",
+                        "inventoryQuantity": 1
+                    }
+                }]
+            },
+            "metafields": {
+                "edges": []
+            }
+        })
+    
+    logger.info(f"[EXTRACT] Created {len(products)} synthetic products from scrape")
+    
+    # Estimate policies from FAQ text (very basic)
+    faq_text = storefront_data.get("faq_text", "")
+    
+    store_data = {
+        "products": products,
+        "policies": {
+            "privacy": "Not found in public scrape — add privacy policy to your storefront",
+            "refund": "Not found in public scrape — add refund policy to your storefront",
+            "shipping": "Not found in public scrape — add shipping policy to your storefront",
+            "terms": "Not found in public scrape — add terms of service to your storefront",
+        },
+        "shop_info": {
+            "name": shop_name,
+            "description": shop_description,
+            "primaryDomain": {"url": storefront_data.get("url", "")},
+            "currencyCode": "USD",
+            "metafields": {"edges": []},
+        },
+        "reviews": {
+            "has_reviews": False,
+            "avg_rating": None,
+            "review_count": 0,
+        },
+        "storefront_data": storefront_data,
+    }
+    
+    logger.info(f"[EXTRACT] ✓ Extraction complete. Store: {shop_name}, Products: {len(products)}")
+    
+    return store_data
+```
+
+---
+
+### FIX 2: Update backend/app/routers/analyze.py
+
+Replace the entire file with this working version:
+
+```python
+from fastapi import APIRouter, HTTPException
+import json
+import logging
+from ..services.scraper import scrape_storefront, extract_store_data_from_scrape
+from ..services.scorer import StoreScorer
+from ..services.gap_engine import prioritize_gaps
+from ..services.temporal import detect_temporal_drift
+from ..services.persona import simulate_personas
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/analyze", tags=["analyze"])
+
+@router.post("/store")
+async def analyze_store(request: dict):
+    """
+    Analyze a public Shopify storefront for AI representation.
+    
+    Request body:
+    {
+        "store_url": "https://myfrido.com"
+    }
+    
+    Returns:
+    {
+        "store_url": str,
+        "score": { composite, grade, dimensions },
+        "gaps": [ { dimension, gap, impact_score, effort_score, priority_rank } ],
+        "temporal": { staleness_score, stale_signals },
+        "personas": { deal_hunter, trust_verifier, lifestyle_matcher },
+        "status": "success"
+    }
+    """
+    try:
+        store_url = request.get("store_url", "").strip()
+        
+        if not store_url:
+            raise HTTPException(status_code=400, detail="store_url is required")
+        
+        logger.info(f"=== ANALYSIS START ===")
+        logger.info(f"Analyzing: {store_url}")
+        
+        # STEP 1: Scrape the public storefront
+        logger.info(f"[STEP 1] Scraping public storefront...")
+        storefront_data = await scrape_storefront(store_url)
+        
+        if storefront_data.get("status") == "error":
+            logger.error(f"[STEP 1] Scrape failed: {storefront_data.get('error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to access store: {storefront_data.get('error')}"
+            )
+        
+        # STEP 2: Convert scraped data to analyzer format
+        logger.info(f"[STEP 2] Extracting store data...")
+        store_data = await extract_store_data_from_scrape(storefront_data)
+        
+        if not store_data.get("products"):
+            logger.warning(f"[STEP 2] No products found, but continuing with analysis")
+        
+        logger.info(f"[STEP 2] Store data ready: {len(store_data.get('products', []))} products")
+        
+        # STEP 3: Score the store (uses Groq for semantic consistency)
+        logger.info(f"[STEP 3] Scoring store across 5 dimensions...")
+        scorer = StoreScorer(store_data)
+        score_result = await scorer.score()
+        
+        logger.info(f"[STEP 3] ✓ Score computed: {score_result['composite']} ({score_result['grade']})")
+        
+        # STEP 4: Prioritize gaps (uses Groq)
+        logger.info(f"[STEP 4] Analyzing gaps and prioritizing...")
+        gaps = await prioritize_gaps(score_result, store_data)
+        
+        logger.info(f"[STEP 4] ✓ Identified {len(gaps)} gaps")
+        
+        # STEP 5: Detect temporal drift (uses Groq)
+        logger.info(f"[STEP 5] Detecting temporal drift signals...")
+        temporal = await detect_temporal_drift(store_data)
+        
+        logger.info(f"[STEP 5] ✓ Staleness score: {temporal.get('staleness_score', 'N/A')}")
+        
+        # STEP 6: Simulate 3 AI personas (uses 3 concurrent Groq calls)
+        logger.info(f"[STEP 6] Simulating 3 AI agent personas...")
+        personas = await simulate_personas(store_data)
+        
+        logger.info(f"[STEP 6] ✓ Personas analyzed")
+        
+        # FINAL: Combine all results
+        result = {
+            "store_url": store_url,
+            "shop_name": store_data.get("shop_info", {}).get("name", "Unknown"),
+            "score": score_result,
+            "gaps": gaps,
+            "temporal": temporal,
+            "personas": personas,
+            "metadata": {
+                "product_count": len(store_data.get("products", [])),
+                "has_schema_org": storefront_data.get("has_schema_org", False),
+                "has_og_tags": storefront_data.get("has_og_tags", False),
+            },
+            "status": "success"
+        }
+        
+        logger.info(f"=== ANALYSIS COMPLETE ===")
+        
+        return result
+    
+    except HTTPException as e:
+        logger.error(f"HTTP Exception: {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during analysis: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {str(e)}"
+        )
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    import os
+    return {
+        "status": "ok",
+        "ai_backend": os.environ.get("AI_BASE_URL", "not set"),
+        "model": os.environ.get("AI_MODEL", "not set"),
+    }
+```
+
+---
+
+### FIX 3: Fix the Frontend Landing Page
+
+Replace frontend/src/pages/Landing.jsx with this working version:
+
+```jsx
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+export default function Landing() {
+  const navigate = useNavigate();
+  const [storeUrl, setStoreUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
+  
+  // Get API URL from environment or default to localhost
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  
+  const handleAnalyze = async (e) => {
+    e.preventDefault();
+    
+    if (!storeUrl.trim()) {
+      setError('Please enter a store URL');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    setProgress('Connecting to store...');
+    
+    try {
+      // Make API call to backend
+      const response = await fetch(`${API_URL}/analyze/store`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          store_url: storeUrl.trim()
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Analysis failed');
+      }
+      
+      setProgress('Processing analysis...');
+      const analysisResult = await response.json();
+      
+      logger.info('[FRONTEND] Analysis received:', analysisResult);
+      
+      // Navigate to dashboard with result
+      navigate('/dashboard', { 
+        state: { analysisResult }
+      });
+      
+    } catch (err) {
+      console.error('Analysis error:', err);
+      setError(err.message || 'Analysis failed. Please check the store URL.');
+    } finally {
+      setLoading(false);
+      setProgress('');
+    }
+  };
+  
+  return (
+    <div className="min-h-screen bg-[#0D0D0D] text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
+        {/* Hero Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-6xl font-bold mb-4 font-mono text-[#A8FF3E]">
+            MirrorMind
+          </h1>
+          <p className="text-3xl font-bold mb-4">
+            See Your Store Through AI Eyes
+          </p>
+          <p className="text-lg text-[#888888] mb-2">
+            Find out exactly how AI shopping agents perceive your Shopify store
+          </p>
+          <p className="text-lg text-[#888888]">
+            — and get a ranked plan to improve your AI representation.
+          </p>
+        </div>
+        
+        {/* Main Form */}
+        <form onSubmit={handleAnalyze} className="bg-[#161616] border border-[#2A2A2A] rounded-xl p-8 mb-8">
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2 text-[#A8FF3E]">
+              Store URL
+            </label>
+            <input
+              type="text"
+              placeholder="e.g., https://myfrido.com or https://www.cin7.com"
+              value={storeUrl}
+              onChange={(e) => setStoreUrl(e.target.value)}
+              disabled={loading}
+              className="w-full bg-[#0D0D0D] border border-[#2A2A2A] rounded-lg px-4 py-4 text-white placeholder-[#555] focus:border-[#A8FF3E] focus:outline-none disabled:opacity-50 transition"
+            />
+            <p className="text-sm text-[#888888] mt-2">
+              Works with any public Shopify store
+            </p>
+          </div>
+          
+          {error && (
+            <div className="mb-6 p-4 bg-[#FF6B00] bg-opacity-10 border border-[#FF6B00] rounded-lg text-[#FF6B00] text-sm">
+              {error}
+            </div>
+          )}
+          
+          {progress && (
+            <div className="mb-6 p-4 bg-[#A8FF3E] bg-opacity-10 border border-[#A8FF3E] rounded-lg text-[#A8FF3E] text-sm">
+              {progress}
+            </div>
+          )}
+          
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#A8FF3E] text-black font-bold py-4 rounded-lg hover:bg-opacity-90 disabled:opacity-50 transition font-mono text-lg"
+          >
+            {loading ? '⟳ Analyzing Store...' : '► Run AI Audit'}
+          </button>
+        </form>
+        
+        {/* Info Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6">
+            <div className="text-[#A8FF3E] font-bold mb-3 font-mono">What We Check</div>
+            <ul className="text-sm text-[#888888] space-y-2">
+              <li>✓ Product data completeness</li>
+              <li>✓ Policy clarity</li>
+              <li>✓ Trust signals & reviews</li>
+              <li>✓ Semantic consistency</li>
+              <li>✓ Structured data (schema.org)</li>
+            </ul>
+          </div>
+          
+          <div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6">
+            <div className="text-[#A8FF3E] font-bold mb-3 font-mono">AI Perspectives</div>
+            <ul className="text-sm text-[#888888] space-y-2">
+              <li>🎯 Deal Hunter Agent</li>
+              <li>🔒 Trust Verifier Agent</li>
+              <li>✨ Lifestyle Matcher Agent</li>
+              <li>⏱️ Temporal drift detection</li>
+              <li>📊 Ranked gap analysis</li>
+            </ul>
+          </div>
+          
+          <div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6">
+            <div className="text-[#A8FF3E] font-bold mb-3 font-mono">Example Stores</div>
+            <ul className="text-sm text-[#888888] space-y-2">
+              <li>→ myfrido.com</li>
+              <li>→ www.cin7.com</li>
+              <li>→ Any public Shopify</li>
+              <li>→ No login needed</li>
+              <li>→ ~15 sec analysis</li>
+            </ul>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="text-center text-sm text-[#555]">
+          Powered by Groq API (free tier) + AI analysis. Privacy: we only read public store data — nothing stored.
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### FIX 4: Update Replit Environment
+
+In your Replit Secrets (Secrets tab), ensure these are set:
