@@ -1,0 +1,613 @@
+You are refactoring MirrorMind for the final hackathon submission based on critical judge feedback:
+
+"Narrow your scope. Build it properly. A focused demo that handles a tightly chosen scope 
+reliably is far stronger than one that attempts a lot but holds together loosely."
+
+Current status: All 8 core features work end-to-end, tested on real stores.
+
+Your task: NARROW, HARDEN, and FINALIZE — not add more features.
+
+---
+
+## SCOPE DECISION (Based on Judge Feedback)
+
+### What We're KEEPING (Core Scope)
+1. AI Perception Snapshot — how AI agents see the store
+2. 5-Dimension Readiness Score — product, policy, trust, semantic, structured data
+3. Gap Prioritization Engine — ranked by impact×effort×revenue risk
+4. Temporal Drift Detection ⭐ — stale/contradictory signals (ORIGINALITY)
+5. 3-Persona AI Simulator ⭐ — Deal Hunter / Trust Verifier / Lifestyle Matcher (ORIGINALITY)
+6. Dashboard — score visualization + gaps + personas + staleness risk
+7. Competitor Benchmarking — compare 1-3 stores (SCOPE: exactly 3 max, not unlimited)
+
+### What We're CUTTING (Out of Scope for Final Demo)
+❌ "Write It For Me" fix generator (streaming) — nice-to-have, not core
+❌ Before/After Simulator — adds complexity without core value
+❌ Mobile responsiveness — build for 1440px desktop only
+❌ Demo video walkthrough — focus on live demo instead
+
+### What We're ADDING (For Accuracy)
+✅ Shopify Admin GraphQL API support (for merchants with admin tokens)
+   - Option 1: Public scraping (no auth needed, less accurate)
+   - Option 2: Admin API (merchant provides token, full accuracy)
+   - Let merchant choose which mode based on what they have
+
+---
+
+## HARDENING PRIORITIES (Edge Cases & Failure Modes)
+
+### Priority 1: Scraper Robustness
+Current issue: Scraper can fail silently if HTML structure unexpected.
+
+Fix:
+```python
+# In backend/app/services/scraper.py, add explicit validation:
+
+async def scrape_storefront(url: str) -> dict:
+    """Scrape public storefront — handles edge cases."""
+    try:
+        # ... scraping code ...
+        
+        # HARDENING: Validate minimum required data was extracted
+        required_fields = ["title", "headings", "product_sections"]
+        for field in required_fields:
+            if not result.get(field):
+                logger.warning(f"[SCRAPER] Missing required field: {field}")
+                return {
+                    "status": "partial_scrape",
+                    "url": url,
+                    "warning": f"Store HTML structure unexpected. Missing {field}. Analysis will have lower confidence.",
+                    "data": result,  # Still return what we got
+                }
+        
+        return {"status": "success", "data": result}
+    
+    except Exception as e:
+        logger.error(f"[SCRAPER] Failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "recovery": "If using public scraping, try providing Shopify admin token for more accurate analysis."
+        }
+```
+
+### Priority 2: Scorer Confidence Scores
+Current issue: We give a score but don't indicate how confident we are in it.
+
+Fix:
+```python
+# In backend/app/services/scorer.py, add confidence field:
+
+async def score(self) -> dict:
+    """Score with explicit confidence."""
+    # ... scoring code ...
+    
+    # Calculate confidence based on data availability
+    confidence = 100
+    if not self.data.get("products"):
+        confidence -= 30
+    if not any(self.data.get("policies", {}).values()):
+        confidence -= 20
+    if not self.data.get("storefront_data", {}).get("has_schema_org"):
+        confidence -= 15
+    
+    return {
+        "composite": round(composite, 1),
+        "grade": self._grade(composite),
+        "confidence": max(confidence, 40),  # Never below 40%
+        "confidence_explanation": self._explain_confidence(confidence),
+        "dimensions": dimensions,
+    }
+
+def _explain_confidence(self, confidence: int) -> str:
+    if confidence >= 80:
+        return "High confidence — complete store data available"
+    elif confidence >= 60:
+        return "Medium confidence — some data missing (add policies/reviews)"
+    else:
+        return "Low confidence — public scrape with minimal data. For better analysis, provide Shopify admin token."
+```
+
+### Priority 3: Gap Prioritization Validation
+Current issue: Gap Engine can rank things that don't make sense.
+
+Fix:
+```python
+# In backend/app/services/gap_engine.py, validate each gap:
+
+async def prioritize_gaps(score_result: dict, store_data: dict) -> list[dict]:
+    """Identify gaps with explicit confidence."""
+    gaps = []
+    
+    # For each dimension, find top gap
+    for dim_name, dim_data in score_result.get("dimensions", {}).items():
+        if dim_data.get("score", 0) < 50:  # Only flag if failing
+            issues = dim_data.get("issues", [])
+            if issues:
+                gap = {
+                    "dimension": dim_name,
+                    "gap": issues[0],  # Top issue
+                    "score": dim_data.get("score"),
+                    "impact_score": _calc_impact(dim_name, dim_data.get("score")),
+                    "effort_score": _estimate_effort(issues[0]),
+                    "revenue_risk": _assess_revenue_risk(dim_name),
+                    "priority_rank": 0,  # Will be set after sorting
+                    "fix_suggestion": dim_data.get("recommendations", [""])[0],
+                    "confidence": "high" if dim_data.get("score") < 30 else "medium"
+                }
+                gaps.append(gap)
+    
+    # VALIDATION: Only include gaps you can defend
+    validated_gaps = []
+    for gap in gaps:
+        if gap["impact_score"] >= 5 and gap["effort_score"] <= 8:
+            validated_gaps.append(gap)
+    
+    # Sort by: impact ÷ effort (highest first)
+    for i, gap in enumerate(sorted(validated_gaps, 
+                                   key=lambda g: g["impact_score"] / max(g["effort_score"], 1),
+                                   reverse=True)):
+        gap["priority_rank"] = i + 1
+    
+    logger.info(f"[GAP_ENGINE] Identified {len(validated_gaps)} defensible gaps")
+    
+    return validated_gaps[:7]  # Max 7 gaps (not 10)
+```
+
+### Priority 4: Persona Results Sanity Checks
+Current issue: Persona scores can be random/unconvincing.
+
+Fix:
+```python
+# In backend/app/services/persona.py, validate before returning:
+
+async def simulate_personas(store_data: dict) -> dict:
+    """3 personas with validation."""
+    personas = {}
+    
+    for name, prompt in [
+        ("deal_hunter", DEAL_HUNTER_PERSONA),
+        ("trust_verifier", TRUST_VERIFIER_PERSONA),
+        ("lifestyle_matcher", LIFESTYLE_MATCHER_PERSONA),
+    ]:
+        try:
+            result = await call_llm_json([{
+                "role": "user",
+                "content": f"{prompt}\n\nStore data:\n{json.dumps(store_summary, default=str)[:2000]}"
+            }])
+            
+            # VALIDATION: Check if LLM output makes sense
+            score = result.get("score", 50)
+            if not isinstance(score, int) or score < 0 or score > 100:
+                logger.warning(f"[PERSONA] Invalid score from {name}: {score}. Using 50.")
+                score = 50
+            
+            strengths = result.get("strengths", [])
+            weaknesses = result.get("weaknesses", [])
+            
+            # Sanity check: need at least 1 strength AND 1 weakness
+            if not strengths or not weaknesses:
+                logger.warning(f"[PERSONA] {name} missing strengths/weaknesses, using defaults")
+                strengths = ["Store has basic product information"]
+                weaknesses = ["Missing customer reviews and trust signals"]
+            
+            personas[name] = {
+                "score": score,
+                "perception_summary": result.get("perception_summary", "")[:200],
+                "strengths": strengths[:2],  # Max 2
+                "weaknesses": weaknesses[:2],  # Max 2
+                "recommendation_likelihood": result.get("recommendation_likelihood", "Medium"),
+            }
+        except Exception as e:
+            logger.error(f"[PERSONA] {name} failed: {e}")
+            personas[name] = {
+                "score": 50,
+                "perception_summary": "Analysis unavailable",
+                "strengths": [],
+                "weaknesses": [],
+                "recommendation_likelihood": "Unknown",
+                "error": True
+            }
+    
+    return personas
+```
+
+### Priority 5: Temporal Drift False Positives
+Current issue: Too many stale signals can confuse merchants.
+
+Fix:
+```python
+# In backend/app/services/temporal.py, be conservative:
+
+async def detect_temporal_drift(store_data: dict) -> dict:
+    """Detect only HIGH-CONFIDENCE stale signals."""
+    stale_signals = []
+    
+    # RULE 1: Only flag years more than 2 years old
+    current_year = datetime.now().year
+    for year in range(2000, current_year - 2):
+        if f"{year}" in combined_text:
+            # Check if it's actually a claim, not just a reference
+            if any(phrase in combined_text for phrase in [
+                f"new for {year}",
+                f"launched {year}",
+                f"founded {year}",
+                f"since {year}"
+            ]):
+                stale_signals.append({
+                    "text": f"Reference to year {year}",
+                    "reason": "Outdated year reference — AI agents may think this is old data",
+                    "risk": "Medium",
+                    "type": "year_reference"
+                })
+    
+    # RULE 2: Only flag policy contradictions if >3 day difference
+    policy_days = re.findall(r"(\d+)\s+days?", policies_text)
+    if policy_days and len(set(policy_days)) > 1:
+        days_set = set(int(d) for d in policy_days)
+        if max(days_set) - min(days_set) > 3:
+            stale_signals.append({
+                "text": f"Policy timeframes vary: {sorted(days_set)}",
+                "reason": "Contradictory return windows — confuses AI agents about actual policy",
+                "risk": "High",
+                "type": "policy_contradiction"
+            })
+    
+    logger.info(f"[TEMPORAL] Found {len(stale_signals)} HIGH-CONFIDENCE stale signals")
+    
+    return {
+        "staleness_score": min(len(stale_signals) * 15, 100),
+        "stale_signals": stale_signals,
+        "summary": f"Detected {len(stale_signals)} temporal inconsistencies"
+    }
+```
+
+---
+
+## SHOPIFY ADMIN API SUPPORT (New)
+
+### Add Dual-Mode Analysis
+Current: Public scraping only
+New: Let merchants choose
+
+```python
+# In backend/app/routers/analyze.py, add this at the top:
+
+@router.post("/store")
+async def analyze_store(request: dict):
+    """
+    Analyze a Shopify store.
+    
+    Mode 1 (Public, no auth):
+    { "store_url": "https://myfrido.com" }
+    
+    Mode 2 (Merchant with admin token):
+    { 
+        "store_domain": "myfrido.myshopify.com",
+        "admin_token": "shpat_...",
+        "mode": "admin"
+    }
+    """
+    
+    mode = request.get("mode", "public")
+    
+    if mode == "public":
+        # Existing scraper logic
+        store_url = request.get("store_url", "").strip()
+        storefront_data = await scrape_storefront(store_url)
+        store_data = await extract_store_data_from_scrape(storefront_data)
+    
+    elif mode == "admin":
+        # NEW: Use Shopify Admin GraphQL API
+        store_domain = request.get("store_domain", "").strip()
+        admin_token = request.get("admin_token", "").strip()
+        
+        if not store_domain or not admin_token:
+            raise HTTPException(status_code=400, detail="store_domain and admin_token required for admin mode")
+        
+        # Validate token (check it's not hardcoded placeholder)
+        if admin_token.startswith("shpat_") and len(admin_token) > 100:
+            client = ShopifyClient(store_domain, admin_token)
+            store_data = await client.fetch_all()
+            logger.info(f"[ANALYZE] Admin mode: fetched {len(store_data.get('products', []))} products from Shopify API")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid admin token format")
+    
+    else:
+        raise HTTPException(status_code=400, detail="mode must be 'public' or 'admin'")
+    
+    # Rest of analysis pipeline (same for both modes)
+    scorer = StoreScorer(store_data)
+    score_result = await scorer.score()
+    gaps = await prioritize_gaps(score_result, store_data)
+    temporal = await detect_temporal_drift(store_data)
+    personas = await simulate_personas(store_data)
+    
+    return {
+        "store": store_data.get("shop_info", {}).get("name", "Unknown"),
+        "analysis_mode": mode,
+        "score": score_result,
+        "gaps": gaps,
+        "temporal": temporal,
+        "personas": personas,
+        "status": "success"
+    }
+```
+
+---
+
+## FRONTEND: Cut & Focus
+
+### What to Keep
+- Landing page (one input: store URL or domain + optional admin token)
+- Dashboard (score ring, 5D breakdown, top 7 gaps, personas, staleness)
+- Competitor view (compare 3 stores side-by-side)
+
+### What to Remove
+- Before/After Simulator page (save for v2)
+- "Write It For Me" generator (save for v2)
+- Mobile views (desktop 1440px only)
+- Simulate page (redundant with dashboard)
+
+### Update Landing Page to Support Both Modes
+
+```jsx
+// frontend/src/pages/Landing.jsx
+
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+export default function Landing() {
+  const navigate = useNavigate();
+  const [mode, setMode] = useState('public'); // 'public' or 'admin'
+  const [storeInput, setStoreInput] = useState('');
+  const [adminToken, setAdminToken] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  
+  const handleAnalyze = async (e) => {
+    e.preventDefault();
+    
+    if (!storeInput.trim()) {
+      setError('Please enter a store URL or domain');
+      return;
+    }
+    
+    if (mode === 'admin' && !adminToken.trim()) {
+      setError('Admin token required for merchant mode');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      const payload = mode === 'public'
+        ? { store_url: storeInput.trim() }
+        : { 
+            store_domain: storeInput.trim(),
+            admin_token: adminToken.trim(),
+            mode: 'admin'
+          };
+      
+      const response = await fetch(`${API_URL}/analyze/store`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Analysis failed');
+      }
+      
+      const result = await response.json();
+      navigate('/dashboard', { state: { analysisResult: result } });
+    } catch (err) {
+      setError(err.message || 'Analysis failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return (
+    <div className="min-h-screen bg-[#0D0D0D] text-white flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl">
+        {/* Hero */}
+        <div className="text-center mb-12">
+          <h1 className="text-6xl font-bold mb-4 font-mono text-[#A8FF3E]">
+            MirrorMind
+          </h1>
+          <p className="text-3xl font-bold mb-4">
+            See Your Store Through AI Eyes
+          </p>
+          <p className="text-lg text-[#888888]">
+            Discover how AI shopping agents perceive your Shopify store.
+          </p>
+        </div>
+        
+        {/* Mode Selector */}
+        <div className="mb-8 flex gap-4 justify-center">
+          <button
+            onClick={() => { setMode('public'); setError(''); }}
+            className={`px-6 py-2 rounded font-mono ${
+              mode === 'public'
+                ? 'bg-[#A8FF3E] text-black'
+                : 'bg-[#161616] text-[#888888] border border-[#2A2A2A]'
+            }`}
+          >
+            Public Store (No Auth)
+          </button>
+          <button
+            onClick={() => { setMode('admin'); setError(''); }}
+            className={`px-6 py-2 rounded font-mono ${
+              mode === 'admin'
+                ? 'bg-[#A8FF3E] text-black'
+                : 'bg-[#161616] text-[#888888] border border-[#2A2A2A]'
+            }`}
+          >
+            Merchant (Admin Token)
+          </button>
+        </div>
+        
+        {/* Form */}
+        <form onSubmit={handleAnalyze} className="bg-[#161616] border border-[#2A2A2A] rounded-xl p-8">
+          {/* Store Input */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-2 text-[#A8FF3E]">
+              {mode === 'public' ? 'Store URL' : 'Store Domain'}
+            </label>
+            <input
+              type="text"
+              placeholder={mode === 'public' 
+                ? 'https://myfrido.com' 
+                : 'myfrido.myshopify.com'}
+              value={storeInput}
+              onChange={(e) => setStoreInput(e.target.value)}
+              disabled={loading}
+              className="w-full bg-[#0D0D0D] border border-[#2A2A2A] rounded-lg px-4 py-3 text-white focus:border-[#A8FF3E] disabled:opacity-50"
+            />
+          </div>
+          
+          {/* Admin Token (if admin mode) */}
+          {mode === 'admin' && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2 text-[#A8FF3E]">
+                Shopify Admin API Token (shpat_...)
+              </label>
+              <input
+                type="password"
+                placeholder="shpat_..."
+                value={adminToken}
+                onChange={(e) => setAdminToken(e.target.value)}
+                disabled={loading}
+                className="w-full bg-[#0D0D0D] border border-[#2A2A2A] rounded-lg px-4 py-3 text-white focus:border-[#A8FF3E] disabled:opacity-50"
+              />
+              <p className="text-xs text-[#555] mt-2">
+                🔒 Token is never stored. Used only for this analysis.
+              </p>
+            </div>
+          )}
+          
+          {error && (
+            <div className="mb-6 p-4 bg-[#FF6B00] bg-opacity-10 border border-[#FF6B00] rounded-lg text-[#FF6B00] text-sm">
+              {error}
+            </div>
+          )}
+          
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#A8FF3E] text-black font-bold py-4 rounded-lg hover:bg-opacity-90 disabled:opacity-50"
+          >
+            {loading ? '⟳ Analyzing...' : '► Run AI Audit'}
+          </button>
+        </form>
+        
+        {/* Info */}
+        <div className="mt-12 grid grid-cols-2 gap-4">
+          <div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6">
+            <div className="text-[#A8FF3E] font-bold mb-3 font-mono text-sm">
+              PUBLIC MODE
+            </div>
+            <p className="text-xs text-[#888888]">
+              No login needed. Analyzes public storefront. Good for quick insights. Less accurate.
+            </p>
+          </div>
+          <div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6">
+            <div className="text-[#A8FF3E] font-bold mb-3 font-mono text-sm">
+              MERCHANT MODE
+            </div>
+            <p className="text-xs text-[#888888]">
+              Full Shopify data access. More accurate analysis. Token not stored.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## DASHBOARD: Show Confidence Levels
+
+Update the dashboard to show confidence alongside scores:
+
+```jsx
+// In frontend/src/pages/Dashboard.jsx, add confidence indicator:
+
+<div className="bg-[#161616] border border-[#2A2A2A] rounded-lg p-6 mb-6">
+  <div className="flex justify-between items-center mb-4">
+    <h2 className="text-lg font-mono text-[#A8FF3E]">AI Readiness Score</h2>
+    <span className={`text-sm px-3 py-1 rounded ${
+      analysisResult.score.confidence >= 80 
+        ? 'bg-[#A8FF3E] bg-opacity-20 text-[#A8FF3E]'
+        : analysisResult.score.confidence >= 60
+        ? 'bg-[#FF6B00] bg-opacity-20 text-[#FF6B00]'
+        : 'bg-red-500 bg-opacity-20 text-red-400'
+    }`}>
+      {analysisResult.score.confidence}% confidence
+    </span>
+  </div>
+  <ScoreRing score={analysisResult.score.composite} />
+  <p className="text-sm text-[#888888] mt-4">
+    {analysisResult.score.confidence_explanation}
+  </p>
+</div>
+```
+
+---
+
+## FINAL CHECKS (Before Demo)
+
+Run these tests to ensure you can DEFEND every result:
+
+```bash
+# 1. Test public scraping (real store)
+curl -X POST http://localhost:8000/analyze/store \
+  -H "Content-Type: application/json" \
+  -d '{"store_url":"https://myfrido.com"}'
+
+# 2. Test admin mode (if available)
+curl -X POST http://localhost:8000/analyze/store \
+  -H "Content-Type: application/json" \
+  -d '{
+    "store_domain": "your-dev-store.myshopify.com",
+    "admin_token": "shpat_...",
+    "mode": "admin"
+  }'
+
+# 3. Check confidence levels are shown
+# Should see: "confidence": 65, "confidence_explanation": "Medium confidence — some data missing"
+
+# 4. Verify gaps are ranked by impact/effort ratio
+# Should see: priority_rank 1-7 only
+
+# 5. Verify personas have no errors
+# Should see: all 3 personas with score, strengths[0:2], weaknesses[0:2]
+```
+
+---
+
+## DEMO STRATEGY
+
+When demoing to judges:
+
+1. **Start with public mode**: "Let me analyze a real store live" → https://myfrido.com
+2. **Show score with confidence**: "55 (C grade) at 65% confidence because we're using public data"
+3. **Highlight top gap**: "Missing shipping policy is the #1 issue"
+4. **Show personas**: "As a Deal Hunter agent, this store scores 42. As Trust Verifier, it scores 38."
+5. **Show temporal drift**: "This product description mentions 'new for 2021' — confuses AI agents in 2025"
+6. **Close with**: "That's the core diagnostic. Merchant now knows exactly what to fix and in what order."
+
+**Keep it tight. Show these 6 screens, then stop. Don't try to show everything.**
+
+---
+
+## FINAL DELIVERABLES (Ship This)
+
+Files to commit and push:

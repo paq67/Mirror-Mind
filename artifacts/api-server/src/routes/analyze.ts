@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
-import { AnalyzeStoreBody, AnalyzeStoreResponse } from "@workspace/api-zod";
+import { AnalyzeStoreBody } from "@workspace/api-zod";
 import { fetchStoreData } from "../services/shopifyService";
 import { scoreStore } from "../services/scorerService";
+import { simulatePersonas } from "../services/personaService";
+import { detectTemporalDrift } from "../services/temporalService";
 
 const router: IRouter = Router();
 
@@ -16,43 +18,48 @@ router.post("/analyze", async (req, res): Promise<void> => {
   const rawInput = parsed.data.storeDomain.trim();
   const { adminToken } = parsed.data;
 
-  // Normalize: strip protocol and trailing slash to get a clean domain
   const storeDomain = rawInput
     .replace(/^https?:\/\//i, "")
     .replace(/\/$/, "")
     .trim();
 
-  req.log.info({ storeDomain, rawInput }, "Starting store analysis");
+  req.log.info({ storeDomain }, "Starting full store analysis");
 
   try {
+    // Step 1: Fetch store data
     const storeData = await fetchStoreData(storeDomain, adminToken ?? undefined);
     req.log.info(
-      {
-        storeDomain,
-        productCount: storeData.productCount,
-        accessedViaApi: storeData.accessedViaApi,
-        hasScrapedMetadata: !!storeData.scrapedMetadata,
-      },
+      { storeDomain, productCount: storeData.productCount, accessedViaApi: storeData.accessedViaApi },
       "Store data fetched",
     );
 
-    const scoreResult = await scoreStore(storeData);
-    req.log.info({ storeDomain, overallScore: scoreResult.overallScore }, "Scoring complete");
+    // Step 2: Run scorer + personas + temporal drift in parallel
+    const [scoreResult, personaResults, temporalResult] = await Promise.all([
+      scoreStore(storeData),
+      simulatePersonas(storeData),
+      detectTemporalDrift(storeData),
+    ]);
 
-    const response = AnalyzeStoreResponse.parse({
+    req.log.info(
+      { storeDomain, overallScore: scoreResult.overallScore, confidence: scoreResult.confidence },
+      "Analysis complete",
+    );
+
+    res.json({
       storeDomain: storeData.domain,
       storeName: storeData.name,
       overallScore: scoreResult.overallScore,
+      confidence: scoreResult.confidence,
+      confidenceExplanation: scoreResult.confidenceExplanation,
       dimensions: scoreResult.dimensions,
       productCount: storeData.productCount,
       topProducts: scoreResult.scoredProducts.slice(0, 10),
       storeDescription: scoreResult.storeDescription,
       analysisTimestamp: new Date().toISOString(),
       gaps: scoreResult.gaps,
+      personas: personaResults,
+      temporal: temporalResult,
     });
-
-    req.log.info({ storeDomain, overallScore: scoreResult.overallScore }, "Analysis complete");
-    res.json(response);
   } catch (err) {
     req.log.error({ err, storeDomain }, "Analysis failed");
     res.status(500).json({

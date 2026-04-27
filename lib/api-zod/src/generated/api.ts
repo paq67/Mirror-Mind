@@ -22,17 +22,35 @@ export const HealthCheckResponse = zod.object({
 export const AnalyzeStoreBody = zod.object({
   storeDomain: zod
     .string()
-    .describe("Shopify store domain (e.g. mystore.myshopify.com)"),
+    .describe("Shopify store domain or full URL (e.g. mystore.myshopify.com or https://mystore.com)"),
   adminToken: zod
     .string()
     .optional()
     .describe("Shopify Admin API token (optional, for deeper access)"),
 });
 
+const PersonaResultSchema = zod.object({
+  score: zod.number(),
+  perceptionSummary: zod.string(),
+  strengths: zod.array(zod.string()),
+  weaknesses: zod.array(zod.string()),
+  recommendationLikelihood: zod.enum(["High", "Medium", "Low"]),
+  wouldRecommend: zod.boolean(),
+});
+
+const StaleSignalSchema = zod.object({
+  text: zod.string(),
+  reason: zod.string(),
+  risk: zod.enum(["High", "Medium", "Low"]),
+  type: zod.string(),
+});
+
 export const AnalyzeStoreResponse = zod.object({
   storeDomain: zod.string(),
   storeName: zod.string(),
   overallScore: zod.number().describe("Overall AI representation score 0-100"),
+  confidence: zod.number().optional().describe("Confidence in the score 40-100"),
+  confidenceExplanation: zod.string().optional(),
   dimensions: zod.array(
     zod.object({
       name: zod
@@ -67,6 +85,21 @@ export const AnalyzeStoreResponse = zod.object({
       affectedCount: zod.number(),
     }),
   ),
+  personas: zod
+    .object({
+      dealHunter: PersonaResultSchema,
+      trustVerifier: PersonaResultSchema,
+      lifestyleMatcher: PersonaResultSchema,
+    })
+    .optional(),
+  temporal: zod
+    .object({
+      stalenessScore: zod.number(),
+      staleSignals: zod.array(StaleSignalSchema),
+      summary: zod.string(),
+      confidence: zod.enum(["high", "medium", "low"]),
+    })
+    .optional(),
 });
 
 /**

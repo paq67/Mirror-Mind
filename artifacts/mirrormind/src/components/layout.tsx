@@ -1,13 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { BarChart2, Cpu, GitCompare, Wrench, Home } from "lucide-react";
+import { BarChart2, GitCompare, Home } from "lucide-react";
 import { useStore } from "@/lib/store-context";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart2 },
-  { href: "/simulate", label: "Simulate", icon: Cpu },
   { href: "/compare", label: "Compare", icon: GitCompare },
-  { href: "/fix", label: "Fix Plan", icon: Wrench },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
