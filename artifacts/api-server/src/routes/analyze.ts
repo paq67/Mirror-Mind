@@ -23,11 +23,14 @@ router.post("/analyze", async (req, res): Promise<void> => {
     .replace(/\/$/, "")
     .trim();
 
-  req.log.info({ storeDomain }, "Starting full store analysis");
+  // Use token from request, or fall back to the server-side secret
+  const resolvedToken = (adminToken && adminToken.trim()) || process.env.SHOPIFY_ADMIN_TOKEN || undefined;
+
+  req.log.info({ storeDomain, hasToken: !!resolvedToken }, "Starting full store analysis");
 
   try {
     // Step 1: Fetch store data
-    const storeData = await fetchStoreData(storeDomain, adminToken ?? undefined);
+    const storeData = await fetchStoreData(storeDomain, resolvedToken);
     req.log.info(
       { storeDomain, productCount: storeData.productCount, accessedViaApi: storeData.accessedViaApi },
       "Store data fetched",
