@@ -42,7 +42,7 @@ app.get("/health", (_req, res) => {
 });
 
 // SPA catch-all — serve index.html for client-side routes
-app.get("*", (_req, res) => {
+app.get("/{*path}", (_req, res) => {
   res.sendFile(path.join(frontendDist, "index.html"));
 });
 
