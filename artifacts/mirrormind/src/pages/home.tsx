@@ -9,8 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield, KeyRound } from "lucide-react";
 import { Entropy } from "@/components/ui/entropy";
 
-// Flag injected at build time — true if SHOPIFY_ADMIN_TOKEN is set server-side
-const SERVER_TOKEN_CONFIGURED = true;
+// Flag fetched at runtime — reflects whether SHOPIFY_ADMIN_TOKEN is set server-side
 
 const EXAMPLE_STORES = [
   "myfrido.com",
@@ -23,11 +22,16 @@ export default function Home() {
   const { storeDomain, adminToken, setStoreDomain, setAdminToken, setAnalysisData } = useStore();
   const [domain, setDomain] = useState(storeDomain);
   const [token, setToken] = useState(adminToken);
-  const [showToken, setShowToken] = useState(SERVER_TOKEN_CONFIGURED);
+  const [serverTokenConfigured, setServerTokenConfigured] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [size, setSize] = useState(800);
   useEffect(() => {
     setSize(Math.max(window.innerWidth, window.innerHeight));
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data) => setServerTokenConfigured(data.shopifyConfigured))
+      .catch(() => setServerTokenConfigured(false));
   }, []);
 
   const analyze = useAnalyzeStore({
@@ -125,7 +129,7 @@ export default function Home() {
             >
               {showToken ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               {showToken ? "Hide" : "Add"} Shopify Admin API token for deeper analysis
-              {SERVER_TOKEN_CONFIGURED && (
+              {serverTokenConfigured && (
                 <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
                   <KeyRound className="h-3 w-3" /> configured
                 </span>
@@ -135,7 +139,7 @@ export default function Home() {
             {showToken && (
               <div className="space-y-2">
                 <Label htmlFor="admin-token">Admin API Token (optional)</Label>
-                {SERVER_TOKEN_CONFIGURED && !token && (
+                {serverTokenConfigured && !token && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-primary/5 border border-primary/20 text-xs text-primary">
                     <KeyRound className="h-3 w-3 flex-shrink-0" />
                     A Shopify Admin token is already configured server-side — full API access is active by default.
@@ -146,7 +150,7 @@ export default function Home() {
                   id="admin-token"
                   data-testid="input-admin-token"
                   type="password"
-                  placeholder={SERVER_TOKEN_CONFIGURED ? "Using server token — enter here to override" : "shpat_..."}
+                  placeholder={serverTokenConfigured ? "Using server token — enter here to override" : "shpat_..."}
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   disabled={analyze.isPending}
