@@ -89,6 +89,8 @@ export interface StoreAnalysis {
   storeDescription: string;
   analysisTimestamp: string;
   gaps: Gap[];
+  confidence?: number;
+  confidenceExplanation?: string;
   personas?: {
     dealHunter: PersonaResult;
     trustVerifier: PersonaResult;

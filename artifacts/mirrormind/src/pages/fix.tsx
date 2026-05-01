@@ -159,7 +159,7 @@ export default function Fix() {
         data: {
           storeDomain,
           adminToken: adminToken || undefined,
-          analysisData: analysisData as Record<string, unknown>,
+          analysisData: analysisData as unknown as Record<string, unknown>,
         },
       });
     }
@@ -171,7 +171,7 @@ export default function Fix() {
       data: {
         storeDomain,
         adminToken: adminToken || undefined,
-        analysisData: analysisData as Record<string, unknown> | undefined,
+          analysisData: analysisData as unknown as Record<string, unknown> | undefined,
       },
     });
   };

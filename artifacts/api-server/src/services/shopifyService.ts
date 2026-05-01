@@ -80,15 +80,15 @@ export async function fetchStoreData(
         cleanDomain,
         adminToken,
         "shop.json",
-      ) as Promise<{
+      ) as {
         shop: { name: string; email: string; currency: string };
-      }>;
+      };
 
       const productsData = await fetchShopifyApi(
         cleanDomain,
         adminToken,
         "products.json?limit=250&fields=id,title,body_html,vendor,product_type,tags,variants,images,metafields",
-      ) as Promise<{ products: ShopifyProduct[] }>;
+      ) as { products: ShopifyProduct[] };
 
       // Fetch additional data in parallel — individual failures are non-fatal
       const [policiesResult, metafieldsResult, blogsResult] =
