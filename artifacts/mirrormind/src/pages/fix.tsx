@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useGenerateFixes } from "@workspace/api-client-react";
-import type { FixPlan, Fix } from "@workspace/api-client-react";
+import { useGenerateFixes } from "@/lib/api-client";
+import type { FixPlan, Fix } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

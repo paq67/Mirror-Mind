@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useAnalyzeStore } from "@workspace/api-client-react";
+import { useAnalyzeStore } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield, KeyRound } from "lucide-react";
+import { Entropy } from "@/components/ui/entropy";
 
 // Flag injected at build time — true if SHOPIFY_ADMIN_TOKEN is set server-side
 const SERVER_TOKEN_CONFIGURED = true;
@@ -24,6 +25,10 @@ export default function Home() {
   const [token, setToken] = useState(adminToken);
   const [showToken, setShowToken] = useState(SERVER_TOKEN_CONFIGURED);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [size, setSize] = useState(800);
+  useEffect(() => {
+    setSize(Math.max(window.innerWidth, window.innerHeight));
+  }, []);
 
   const analyze = useAnalyzeStore({
     mutation: {
@@ -50,7 +55,11 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="relative min-h-screen overflow-hidden bg-black">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Entropy size={size} />
+      </div>
+      <div className="relative z-10 min-h-screen bg-background/30 backdrop-blur-[1px] flex flex-col">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
@@ -188,6 +197,7 @@ export default function Home() {
           </div>
         </div>
       </main>
+    </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useSimulatePersona } from "@workspace/api-client-react";
-import type { PersonaSimulation } from "@workspace/api-client-react";
+import { useSimulatePersona } from "@/lib/api-client";
+import type { PersonaSimulation } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

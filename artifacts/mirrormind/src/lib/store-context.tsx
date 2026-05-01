@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { StoreAnalysis } from '@workspace/api-client-react';
+import type { StoreAnalysis } from '@/lib/api-client';
 
 interface StoreState {
   storeDomain: string;

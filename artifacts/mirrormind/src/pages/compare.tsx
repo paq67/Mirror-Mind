@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useCompareCompetitors } from "@workspace/api-client-react";
-import type { CompetitorComparison } from "@workspace/api-client-react";
+import { useCompareCompetitors } from "@/lib/api-client";
+import type { CompetitorComparison } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
