@@ -155,7 +155,7 @@ export default function Dashboard() {
   const {
     storeName, overallScore, dimensions, topProducts, gaps,
     storeDescription, analysisTimestamp, productCount,
-    confidence, confidenceExplanation, personas, temporal,
+    confidence, confidenceExplanation, personas, temporal, enhancedAnalysis,
   } = analysisData;
 
   const criticalGaps = gaps.filter((g) => g.severity === "critical" || g.severity === "high");
@@ -171,7 +171,14 @@ export default function Dashboard() {
             {productCount} products · analyzed {new Date(analysisTimestamp).toLocaleDateString()}
           </p>
         </div>
-        {confidence != null && <ConfidenceBadge confidence={confidence} />}
+        <div className="flex items-center gap-2">
+          {enhancedAnalysis && (
+            <Badge className="text-xs bg-primary/20 text-primary border-primary/30 flex items-center gap-1">
+              <CheckCircle className="h-3 w-3" /> Enhanced Analysis
+            </Badge>
+          )}
+          {confidence != null && <ConfidenceBadge confidence={confidence} />}
+        </div>
       </div>
 
       {/* Score + Dimensions */}

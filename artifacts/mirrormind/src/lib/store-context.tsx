@@ -20,9 +20,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [storeDomain, setStoreDomain] = useState<string>(() => {
     return localStorage.getItem('mirrormind_domain') || '';
   });
-  const [adminToken, setAdminToken] = useState<string>(() => {
-    return localStorage.getItem('mirrormind_token') || '';
-  });
+  const [adminToken, setAdminToken] = useState<string>("");
   const [analysisData, setAnalysisData] = useState<StoreAnalysis | null>(() => {
     const saved = localStorage.getItem('mirrormind_analysis');
     try {
@@ -35,10 +33,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem('mirrormind_domain', storeDomain);
   }, [storeDomain]);
-
-  useEffect(() => {
-    localStorage.setItem('mirrormind_token', adminToken);
-  }, [adminToken]);
 
   useEffect(() => {
     if (analysisData) {

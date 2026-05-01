@@ -30,6 +30,8 @@ export interface ShopifyStoreData {
     privacy?: string;
   };
   accessedViaApi: boolean;
+  shopMetafields?: Array<{ key: string; value: string; namespace: string }>;
+  blogArticles?: Array<{ title: string; contentPreview: string; publishedAt: string }>;
   scrapedMetadata?: {
     title: string;
     metaDescription: string;
@@ -74,16 +76,89 @@ export async function fetchStoreData(
 
   if (adminToken) {
     try {
-      const [shopData, productsData] = await Promise.all([
-        fetchShopifyApi(cleanDomain, adminToken, "shop.json") as Promise<{
-          shop: { name: string; email: string; currency: string };
-        }>,
-        fetchShopifyApi(
-          cleanDomain,
-          adminToken,
-          "products.json?limit=50&fields=id,title,body_html,vendor,product_type,tags,variants,images",
-        ) as Promise<{ products: ShopifyProduct[] }>,
-      ]);
+      const shopData = await fetchShopifyApi(
+        cleanDomain,
+        adminToken,
+        "shop.json",
+      ) as Promise<{
+        shop: { name: string; email: string; currency: string };
+      }>;
+
+      const productsData = await fetchShopifyApi(
+        cleanDomain,
+        adminToken,
+        "products.json?limit=250&fields=id,title,body_html,vendor,product_type,tags,variants,images,metafields",
+      ) as Promise<{ products: ShopifyProduct[] }>;
+
+      // Fetch additional data in parallel — individual failures are non-fatal
+      const [policiesResult, metafieldsResult, blogsResult] =
+        await Promise.allSettled([
+          fetchShopifyApi(cleanDomain, adminToken, "policies.json") as Promise<{
+            policies: Array<{
+              title: string;
+              body: string;
+              handle: string;
+            }>;
+          }>,
+          fetchShopifyApi(
+            cleanDomain,
+            adminToken,
+            "metafields.json?limit=50",
+          ) as Promise<{
+            metafields: Array<{
+              key: string;
+              value: string;
+              namespace: string;
+            }>;
+          }>,
+          (async () => {
+            const blogsData = (await fetchShopifyApi(
+              cleanDomain,
+              adminToken,
+              "blogs.json",
+            )) as { blogs: Array<{ id: string; title: string; handle: string }> };
+
+            if (!blogsData.blogs || blogsData.blogs.length === 0) return { articles: [] };
+
+            const firstBlog = blogsData.blogs[0];
+            if (!firstBlog) return { articles: [] };
+
+            return fetchShopifyApi(
+              cleanDomain,
+              adminToken,
+              `blogs/${firstBlog.id}/articles.json?limit=5&fields=title,body_html,published_at`,
+            ) as Promise<{
+              articles: Array<{
+                title: string;
+                body_html: string;
+                published_at: string;
+              }>;
+            }>;
+          })(),
+        ]);
+
+      const policies =
+        policiesResult.status === "fulfilled"
+          ? policiesResult.value.policies
+          : [];
+      const policiesMap = Object.fromEntries(
+        policies.map((p) => [p.handle, p.body?.slice(0, 500) || ""]),
+      );
+
+      const shopMetafields =
+        metafieldsResult.status === "fulfilled"
+          ? metafieldsResult.value.metafields
+          : [];
+
+      const rawArticles =
+        blogsResult.status === "fulfilled" && "articles" in blogsResult.value
+          ? (blogsResult.value as { articles: Array<{ title: string; body_html: string; published_at: string }> }).articles
+          : [];
+      const blogArticles = rawArticles.map((a) => ({
+        title: a.title,
+        contentPreview: (a.body_html ?? "").replace(/<[^>]+>/g, "").slice(0, 300),
+        publishedAt: a.published_at,
+      }));
 
       return {
         name: shopData.shop.name,
@@ -93,6 +168,13 @@ export async function fetchStoreData(
         products: productsData.products,
         productCount: productsData.products.length,
         accessedViaApi: true,
+        policies: {
+          shipping: policiesMap["shipping-policy"] ?? "",
+          returns: policiesMap["refund-policy"] ?? "",
+          privacy: policiesMap["privacy-policy"] ?? "",
+        },
+        shopMetafields,
+        blogArticles,
       };
     } catch (err) {
       logger.warn({ err, domain }, "Shopify API access failed, falling back to scraping");

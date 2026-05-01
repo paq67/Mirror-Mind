@@ -135,6 +135,14 @@ Analysis Confidence: ${confidence}% (${confidenceExplanation})
 
 ${scrapedContext}
 
+${store.accessedViaApi ? `
+API Data:
+- Policies: Shipping: ${store.policies?.shipping ? "present" : "missing"}, Returns: ${store.policies?.returns ? "present" : "missing"}, Privacy: ${store.policies?.privacy ? "present" : "missing"}
+- Shop Metafields: ${store.shopMetafields?.length ?? 0} structured fields found
+- Blog Articles: ${store.blogArticles?.length ?? 0} articles (${store.blogArticles?.[0]?.title ?? "none"})
+- Total Product Count (via API): ${store.productCount}
+`.trim() : ""}
+
 Product Samples (${productSummaries.length}):
 ${JSON.stringify(productSummaries, null, 2)}
 

@@ -55,6 +55,29 @@ export interface Gap {
   affectedCount: number;
 }
 
+export interface PersonaResult {
+  score: number;
+  perceptionSummary: string;
+  strengths: string[];
+  weaknesses: string[];
+  recommendationLikelihood: "High" | "Medium" | "Low";
+  wouldRecommend: boolean;
+}
+
+export interface StaleSignal {
+  text: string;
+  reason: string;
+  risk: "High" | "Medium" | "Low";
+  type: string;
+}
+
+export interface TemporalDriftResult {
+  stalenessScore: number;
+  staleSignals: StaleSignal[];
+  summary: string;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface StoreAnalysis {
   storeDomain: string;
   storeName: string;
@@ -66,6 +89,13 @@ export interface StoreAnalysis {
   storeDescription: string;
   analysisTimestamp: string;
   gaps: Gap[];
+  personas?: {
+    dealHunter: PersonaResult;
+    trustVerifier: PersonaResult;
+    lifestyleMatcher: PersonaResult;
+  };
+  temporal?: TemporalDriftResult;
+  enhancedAnalysis?: boolean;
 }
 
 /**

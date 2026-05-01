@@ -62,6 +62,7 @@ router.post("/analyze", async (req, res): Promise<void> => {
       gaps: scoreResult.gaps,
       personas: personaResults,
       temporal: temporalResult,
+      enhancedAnalysis: storeData.accessedViaApi,
     });
   } catch (err) {
     req.log.error({ err, storeDomain }, "Analysis failed");
