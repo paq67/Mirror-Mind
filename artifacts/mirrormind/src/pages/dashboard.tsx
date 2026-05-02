@@ -185,7 +185,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!analysisData && !storeDomain) {
-      setLocation("/");
+      const timer = setTimeout(() => setLocation("/"), 2000);
+      return () => clearTimeout(timer);
     }
   }, [analysisData, storeDomain, setLocation]);
 

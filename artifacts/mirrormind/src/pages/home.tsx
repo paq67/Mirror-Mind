@@ -87,13 +87,14 @@ export default function Home() {
         if (!res.ok) return;
         const data = await res.json();
         setCurrentStep(data.step ?? "fetching_store");
-        if (data.status === "complete" && data.result) {
+         if (data.status === "complete" && data.result) {
           stopPolling();
           setStoreDomain(domain.trim());
           setAdminToken(token.trim());
           setAnalysisData(data.result);
           setJobId(null);
-          setLocation("/dashboard");
+          // Wait for context to flush before navigating
+          setTimeout(() => setLocation("/dashboard"), 0);
         } else if (data.status === "error") {
           stopPolling();
           setJobId(null);
@@ -106,7 +107,11 @@ export default function Home() {
           else if (code === "SCRAPING_FAILED") msg = "Could not extract store data. The store may be password-protected.";
           setErrorMsg(msg);
         }
-      } catch { /* ignore network blips */ }
+       } catch (err) {
+         stopPolling();
+         setJobId(null);
+         setErrorMsg("Connection lost. Please try again.");
+       }
     }, 800);
     return stopPolling;
   }, [jobId, stopPolling, domain, token, setStoreDomain, setAdminToken, setAnalysisData, setLocation]);
@@ -114,6 +119,7 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setJobId(null);
     const input = domain.trim();
     if (!input) return;
     analyze.mutate({ data: { storeDomain: input, adminToken: token.trim() || undefined } });
@@ -286,7 +292,7 @@ export default function Home() {
             </Button>
 
             {/* Step progress */}
-            {analyze.isPending && (
+            {(analyze.isPending || jobId) && (
               <div className="space-y-1.5 pt-1" data-testid="progress-steps">
                 {STEPS.slice(0, -1).map((step, i) => {
                   const isActive = i === currentStepIndex;
