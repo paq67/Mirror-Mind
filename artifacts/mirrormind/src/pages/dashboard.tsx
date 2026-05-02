@@ -5,7 +5,8 @@ import { RadialBarChart, RadialBar, ResponsiveContainer, Cell } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { AlertTriangle, CheckCircle, Info, TrendingDown, Clock, ShoppingBag, ShieldCheck, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle, Info, Clock, ShoppingBag, ShieldCheck, Sparkles } from "lucide-react";
+import FallbackCard from "@/components/ui/fallback-card";
 
 const SEVERITY_CONFIG = {
   critical: { color: "destructive" as const, icon: AlertTriangle, label: "Critical" },
@@ -144,9 +145,8 @@ export default function Dashboard() {
   if (!analysisData) {
     return (
       <div className="flex items-center justify-center h-full p-8">
-        <div className="text-center space-y-3">
-          <TrendingDown className="h-10 w-10 text-muted-foreground mx-auto" />
-          <p className="text-muted-foreground">No analysis data. Run an analysis first.</p>
+        <div className="w-[420px]">
+          <FallbackCard message="No analysis data. Run an analysis first." showIcon showGlitch />
         </div>
       </div>
     );
@@ -206,7 +206,7 @@ export default function Dashboard() {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">5-Dimension Readiness</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">6-Dimension Readiness</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {dimensions.map((dim) => (
