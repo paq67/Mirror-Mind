@@ -1,4 +1,4 @@
-import { crypto } from "crypto";
+import { randomUUID } from "crypto";
 
 type JobStatus = "pending" | "complete" | "error";
 
@@ -25,7 +25,7 @@ setInterval(() => {
 }, JOB_TTL);
 
 export function createJob(): string {
-  const jobId = crypto.randomUUID();
+  const jobId = randomUUID();
   progressMap.set(jobId, {
     status: "pending",
     step: "fetching_store",

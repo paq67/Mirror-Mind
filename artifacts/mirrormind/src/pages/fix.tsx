@@ -7,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Empty } from "@/components/ui/empty";
-import { Loader2, AlertCircle, ChevronDown, ChevronUp, Zap, Target, Sparkles } from "lucide-react";
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Loader2, AlertCircle, ChevronDown, ChevronUp, Zap, Target, Sparkles } from "lucide-react";
 
 const PRIORITY_COLORS: Record<string, string> = {
   critical: "text-red-400",

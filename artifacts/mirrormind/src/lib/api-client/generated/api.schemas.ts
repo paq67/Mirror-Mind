@@ -104,7 +104,6 @@ export interface StoreAnalysis {
 export interface AnalyzeStoreResponse {
   jobId: string;
 }
-}
 
 /**
  * Which AI shopping agent persona to simulate
