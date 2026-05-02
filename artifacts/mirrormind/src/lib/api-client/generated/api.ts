@@ -18,6 +18,7 @@ import type {
 
 import type {
   AnalyzeStoreBody,
+  AnalyzeStoreResponse,
   ApiError,
   CompareCompetitorsBody,
   CompetitorComparison,
@@ -125,8 +126,8 @@ export const getAnalyzeStoreUrl = () => {
 export const analyzeStore = async (
   analyzeStoreBody: AnalyzeStoreBody,
   options?: RequestInit,
-): Promise<StoreAnalysis> => {
-  return customFetch<StoreAnalysis>(getAnalyzeStoreUrl(), {
+): Promise<AnalyzeStoreResponse> => {
+  return customFetch<AnalyzeStoreResponse>(getAnalyzeStoreUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },

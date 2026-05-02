@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAnalyzeStore } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield, KeyRound } from "lucide-react";
+import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield, KeyRound, CheckCircle2, XCircle, Info } from "lucide-react";
 
 // Flag fetched at runtime — reflects whether SHOPIFY_ADMIN_TOKEN is set server-side
 
@@ -14,6 +14,23 @@ const EXAMPLE_STORES = [
   "myfrido.com",
   "allbirds.com",
   "gymshark.com",
+];
+
+const STEPS = [
+  { key: "fetching_store", label: "Scanning store data..." },
+  { key: "scoring", label: "Scoring AI representation..." },
+  { key: "simulating_personas", label: "Simulating Deal Hunter, Trust Verifier, Lifestyle Matcher..." },
+  { key: "detecting_drift", label: "Detecting temporal drift..." },
+  { key: "complete", label: "Analysis complete!" },
+];
+
+const DIMENSIONS_INFO = [
+  { name: "Content Clarity", desc: "Can AI understand what you sell and who it's for?" },
+  { name: "Structured Data", desc: "Are Schema.org, OG tags, and meta tags present for AI to parse?" },
+  { name: "Trust Signals", desc: "Can AI verify your store is legitimate and safe to recommend?" },
+  { name: "Product Discovery", desc: "Can AI find and compare your products accurately?" },
+  { name: "Brand Consistency", desc: "Does your messaging stay consistent across all AI touchpoints?" },
+  { name: "Temporal Freshness", desc: "Is your content up-to-date and free of stale signals?" },
 ];
 
 export default function Home() {
@@ -24,6 +41,11 @@ export default function Home() {
   const [serverTokenConfigured, setServerTokenConfigured] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [currentStep, setCurrentStep] = useState("fetching_store");
+  const [dimensionOpen, setDimensionOpen] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     fetch("/api/config")
       .then((r) => r.json())
@@ -31,29 +53,78 @@ export default function Home() {
       .catch(() => setServerTokenConfigured(false));
   }, []);
 
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const analyze = useAnalyzeStore({
     mutation: {
-      onSuccess: (data) => {
-        setStoreDomain(domain.trim());
-        setAdminToken(token.trim());
-        setAnalysisData(data);
-        setLocation("/dashboard");
+      onSuccess: (data: { jobId?: string }) => {
+        if (data.jobId) {
+          setJobId(data.jobId);
+          setCurrentStep("fetching_store");
+        }
       },
       onError: (err: unknown) => {
-        const msg = err instanceof Error ? err.message : "Analysis failed. Please try again.";
-        setErrorMsg(msg);
+        stopPolling();
+        setJobId(null);
+        const raw = err instanceof Error ? err.message : "Analysis failed. Please try again.";
+        setErrorMsg(raw);
       },
     },
   });
+
+  // Poll progress endpoint when we have a jobId
+  useEffect(() => {
+    if (!jobId) return;
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/analyze/progress/${jobId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setCurrentStep(data.step ?? "fetching_store");
+        if (data.status === "complete" && data.result) {
+          stopPolling();
+          setStoreDomain(domain.trim());
+          setAdminToken(token.trim());
+          setAnalysisData(data.result);
+          setJobId(null);
+          setLocation("/dashboard");
+        } else if (data.status === "error") {
+          stopPolling();
+          setJobId(null);
+          let parsed: { code?: string; message?: string } | null = null;
+          try { parsed = JSON.parse(data.error); } catch { /* ignore */ }
+          const code = parsed?.code ?? "";
+          let msg = parsed?.message ?? data.error ?? "Analysis failed. Please try again.";
+          if (code === "STORE_UNREACHABLE") msg = "Store not reachable. Check the domain and try again.";
+          else if (code === "INVALID_TOKEN") msg = "Invalid Shopify Admin token. Check your token and try again.";
+          else if (code === "SCRAPING_FAILED") msg = "Could not extract store data. The store may be password-protected.";
+          setErrorMsg(msg);
+        }
+      } catch { /* ignore network blips */ }
+    }, 800);
+    return stopPolling;
+  }, [jobId, stopPolling, domain, token, setStoreDomain, setAdminToken, setAnalysisData, setLocation]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     const input = domain.trim();
     if (!input) return;
-    // Strip protocol if user pastes a full URL — backend handles both
     analyze.mutate({ data: { storeDomain: input, adminToken: token.trim() || undefined } });
   };
+
+  const handleRetry = () => {
+    setErrorMsg(null);
+    analyze.mutate({ data: { storeDomain: domain.trim(), adminToken: token.trim() || undefined } });
+  };
+
+  const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
 
   return (
     <div className="relative z-10 min-h-screen flex flex-col">
@@ -64,7 +135,10 @@ export default function Home() {
           </div>
           <span className="font-semibold tracking-tight">MirrorMind</span>
         </div>
-        <span className="text-xs text-muted-foreground font-mono">AI Representation Optimizer</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground font-mono">AI Representation Optimizer</span>
+          <span className="text-[10px] text-muted-foreground/60 font-mono border border-border/50 rounded px-1.5 py-0.5">$29/mo</span>
+        </div>
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-16">
@@ -80,6 +154,9 @@ export default function Home() {
             </h1>
             <p className="text-muted-foreground text-lg max-w-md mx-auto">
               Discover exactly how ChatGPT Shopping, Perplexity, and Google Shopping AI perceive your store — then fix it before you lose recommendations.
+            </p>
+            <p className="text-sm text-primary font-medium">
+              SEO tools optimize for Google. MirrorMind optimizes for AI agents.
             </p>
           </div>
 
@@ -155,10 +232,37 @@ export default function Home() {
               </div>
             )}
 
+            {/* Dimension explanation */}
+            <div className="border border-border/50 rounded-md">
+              <button
+                type="button"
+                onClick={() => setDimensionOpen(!dimensionOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="flex items-center gap-1"><Info className="h-3 w-3" /> Why these 6 dimensions?</span>
+                {dimensionOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+              {dimensionOpen && (
+                <div className="px-3 pb-3 space-y-1.5 border-t border-border/50 pt-2">
+                  {DIMENSIONS_INFO.map((d) => (
+                    <div key={d.name} className="flex items-start gap-2 text-xs">
+                      <span className="text-primary font-medium min-w-[110px]">{d.name}</span>
+                      <span className="text-muted-foreground">{d.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {errorMsg && (
               <Alert variant="destructive" data-testid="alert-error">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{errorMsg}</AlertDescription>
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>{errorMsg}</span>
+                  <Button type="button" variant="outline" size="sm" onClick={handleRetry} className="border-destructive/50 text-destructive hover:bg-destructive/10">
+                    Retry
+                  </Button>
+                </AlertDescription>
               </Alert>
             )}
 
@@ -171,12 +275,39 @@ export default function Home() {
               {analyze.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Analyzing AI representation… (10–20s)
+                  {STEPS.find((s) => s.key === currentStep)?.label ?? "Analyzing..."}
                 </>
               ) : (
-                "Analyze Store"
+                <>
+                  Analyze Store
+                  <span className="ml-2 text-[10px] opacity-60 font-normal">(10–20s)</span>
+                </>
               )}
             </Button>
+
+            {/* Step progress */}
+            {analyze.isPending && (
+              <div className="space-y-1.5 pt-1" data-testid="progress-steps">
+                {STEPS.slice(0, -1).map((step, i) => {
+                  const isActive = i === currentStepIndex;
+                  const isDone = i < currentStepIndex;
+                  return (
+                    <div key={step.key} className="flex items-center gap-2 text-xs">
+                      {isDone ? (
+                        <CheckCircle2 className="h-3 w-3 text-primary flex-shrink-0" />
+                      ) : isActive ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-primary flex-shrink-0" />
+                      ) : (
+                        <div className="h-3 w-3 rounded-full border border-muted-foreground/30 flex-shrink-0" />
+                      )}
+                      <span className={isDone ? "text-primary/70" : isActive ? "text-primary" : "text-muted-foreground/50"}>
+                        {step.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </form>
 
           <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">

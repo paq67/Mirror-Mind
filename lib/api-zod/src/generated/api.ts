@@ -46,6 +46,11 @@ const StaleSignalSchema = zod.object({
 });
 
 export const AnalyzeStoreResponse = zod.object({
+  jobId: zod.string().describe("Job ID to poll for progress via /api/analyze/progress/:jobId"),
+});
+
+// Full analysis result returned by the progress endpoint
+export const StoreAnalysisResponse = zod.object({
   storeDomain: zod.string(),
   storeName: zod.string(),
   overallScore: zod.number().describe("Overall AI representation score 0-100"),
@@ -100,6 +105,7 @@ export const AnalyzeStoreResponse = zod.object({
       confidence: zod.enum(["high", "medium", "low"]),
     })
     .optional(),
+  enhancedAnalysis: zod.boolean().optional(),
 });
 
 /**

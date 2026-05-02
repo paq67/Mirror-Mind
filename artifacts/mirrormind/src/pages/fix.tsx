@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { useGenerateFixes } from "@/lib/api-client";
 import type { FixPlan, Fix } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
@@ -6,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, AlertCircle, ChevronDown, ChevronUp, Zap, Target } from "lucide-react";
+import { Empty } from "@/components/ui/empty";
+import { Loader2, AlertCircle, ChevronDown, ChevronUp, Zap, Target, Sparkles } from "lucide-react";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 const PRIORITY_COLORS: Record<string, string> = {
   critical: "text-red-400",
@@ -135,6 +138,7 @@ function PriorityMatrix({ fixes }: { fixes: Fix[] }) {
 }
 
 export default function Fix() {
+  const [, setLocation] = useLocation();
   const { storeDomain, adminToken, analysisData } = useStore();
   const [fixPlan, setFixPlan] = useState<FixPlan | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -203,12 +207,18 @@ export default function Fix() {
       )}
 
       {!storeDomain && !generateFixes.isPending && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Please analyze your store first before generating a fix plan.
-          </AlertDescription>
-        </Alert>
+        <Empty data-testid="empty-no-store">
+          <EmptyMedia>
+            <Sparkles className="h-8 w-8 text-primary" />
+          </EmptyMedia>
+          <EmptyTitle>No store analyzed yet</EmptyTitle>
+          <EmptyDescription>
+            Run an analysis first to unlock personalized fix plans.
+          </EmptyDescription>
+          <Button onClick={() => setLocation("/")} data-testid="button-go-analyze">
+            Analyze a Store
+          </Button>
+        </Empty>
       )}
 
       {errorMsg && (

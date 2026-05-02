@@ -98,6 +98,13 @@ function PersonaCard({
     return words.slice(0, max).join(" ") + "...";
   };
 
+  // Plain English takeaway based on score + recommendation
+  const takeaway = persona.wouldRecommend
+    ? persona.score >= 70
+      ? "Sees you as a top recommendation"
+      : "Would recommend, but with reservations"
+    : "Would not recommend in current state";
+
   return (
     <GradientCard>
       <motion.div
@@ -129,18 +136,28 @@ function PersonaCard({
               Likelihood: <span className="font-medium text-white/70">{persona.recommendationLikelihood}</span>
             </span>
           </div>
+          <div className="p-2 rounded bg-white/5 border border-white/10">
+            <p className="text-xs text-white/60">Plain English takeaway:</p>
+            <p className="text-xs text-primary font-medium mt-0.5">{takeaway}</p>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="text-xs font-medium text-primary mb-1">Strengths</p>
-              {persona.strengths.slice(0, 3).map((s, i) => (
+              {persona.strengths.slice(0, 2).map((s, i) => (
                 <p key={i} className="text-xs text-white/70">• {expanded ? s : truncate(s, 5)}</p>
               ))}
+              {!expanded && persona.strengths.length > 2 && (
+                <p className="text-xs text-white/30">+{persona.strengths.length - 2} more</p>
+              )}
             </div>
             <div>
               <p className="text-xs font-medium text-destructive mb-1">Weaknesses</p>
-              {persona.weaknesses.slice(0, 3).map((w, i) => (
+              {persona.weaknesses.slice(0, 2).map((w, i) => (
                 <p key={i} className="text-xs text-white/70">• {expanded ? w : truncate(w, 5)}</p>
               ))}
+              {!expanded && persona.weaknesses.length > 2 && (
+                <p className="text-xs text-white/30">+{persona.weaknesses.length - 2} more</p>
+              )}
             </div>
           </div>
           <button

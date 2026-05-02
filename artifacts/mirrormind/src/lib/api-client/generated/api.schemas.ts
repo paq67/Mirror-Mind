@@ -100,6 +100,12 @@ export interface StoreAnalysis {
   enhancedAnalysis?: boolean;
 }
 
+/** Response from POST /api/analyze — returns a job ID for polling */
+export interface AnalyzeStoreResponse {
+  jobId: string;
+}
+}
+
 /**
  * Which AI shopping agent persona to simulate
  */

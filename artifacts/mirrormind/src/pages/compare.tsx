@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useCompareCompetitors } from "@/lib/api-client";
 import type { CompetitorComparison } from "@/lib/api-client";
 import { useStore } from "@/lib/store-context";
@@ -8,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, AlertCircle, Plus, X, Trophy, TrendingUp } from "lucide-react";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Loader2, AlertCircle, Plus, X, Trophy, TrendingUp, Sparkles } from "lucide-react";
 
 function ComparisonResult({ result, yourDomain }: { result: CompetitorComparison; yourDomain: string }) {
   const allStores = [
@@ -151,6 +153,7 @@ function ComparisonResult({ result, yourDomain }: { result: CompetitorComparison
 }
 
 export default function Compare() {
+  const [, setLocation] = useLocation();
   const { storeDomain, adminToken } = useStore();
   const [competitors, setCompetitors] = useState<string[]>([""]);
   const [result, setResult] = useState<CompetitorComparison | null>(null);
@@ -257,12 +260,18 @@ export default function Compare() {
             </div>
 
             {!storeDomain && (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Please analyze your store first before comparing.
-                </AlertDescription>
-              </Alert>
+              <Empty data-testid="empty-no-store">
+                <EmptyMedia>
+                  <Sparkles className="h-8 w-8 text-primary" />
+                </EmptyMedia>
+                <EmptyTitle>No store analyzed yet</EmptyTitle>
+                <EmptyDescription>
+                  Run an analysis first to unlock competitor comparison.
+                </EmptyDescription>
+                <Button onClick={() => setLocation("/")} data-testid="button-go-analyze">
+                  Analyze a Store
+                </Button>
+              </Empty>
             )}
 
             {errorMsg && (
