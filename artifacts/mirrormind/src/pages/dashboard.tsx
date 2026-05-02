@@ -8,6 +8,7 @@ import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { GradientCard } from "@/components/ui/gradient-card";
 import { AlertTriangle, CheckCircle, Info, Clock, ShoppingBag, ShieldCheck, Sparkles } from "lucide-react";
+import { useState } from "react";
 
 const SEVERITY_CONFIG = {
   critical: { color: "destructive" as const, icon: AlertTriangle, label: "Critical" },
@@ -84,11 +85,18 @@ function PersonaCard({
     wouldRecommend: boolean;
   };
 }) {
+  const [expanded, setExpanded] = useState(false);
   const config = PERSONA_CONFIG[personaKey];
   const Icon = config.icon;
   const scoreColor = persona.score >= 70 ? "#00cccc" : persona.score >= 45 ? "#f59e0b" : "#ef4444";
   const recLabel = persona.wouldRecommend ? "Would Recommend" : "Would Not Recommend";
   const recColor = persona.wouldRecommend ? "text-primary" : "text-destructive";
+
+  const truncate = (text: string, max: number) => {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length <= max) return text;
+    return words.slice(0, max).join(" ") + "...";
+  };
 
   return (
     <GradientCard>
@@ -112,7 +120,9 @@ function PersonaCard({
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-white/70 leading-relaxed">{persona.perceptionSummary}</p>
+          <p className="text-xs text-white/70 leading-relaxed">
+            {expanded ? persona.perceptionSummary : truncate(persona.perceptionSummary, 30)}
+          </p>
           <div className="flex items-center justify-between">
             <span className={`text-xs font-medium ${recColor}`}>{recLabel}</span>
             <span className="text-xs text-white/50">
@@ -122,17 +132,24 @@ function PersonaCard({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="text-xs font-medium text-primary mb-1">Strengths</p>
-              {persona.strengths.slice(0, 2).map((s, i) => (
-                <p key={i} className="text-xs text-white/70">• {s}</p>
+              {persona.strengths.slice(0, 3).map((s, i) => (
+                <p key={i} className="text-xs text-white/70">• {expanded ? s : truncate(s, 5)}</p>
               ))}
             </div>
             <div>
               <p className="text-xs font-medium text-destructive mb-1">Weaknesses</p>
-              {persona.weaknesses.slice(0, 2).map((w, i) => (
-                <p key={i} className="text-xs text-white/70">• {w}</p>
+              {persona.weaknesses.slice(0, 3).map((w, i) => (
+                <p key={i} className="text-xs text-white/70">• {expanded ? w : truncate(w, 5)}</p>
               ))}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-cyan-400 underline cursor-pointer hover:text-cyan-300 transition-colors"
+          >
+            {expanded ? "Collapse ↑" : "See full analysis ↓"}
+          </button>
         </CardContent>
       </motion.div>
     </GradientCard>

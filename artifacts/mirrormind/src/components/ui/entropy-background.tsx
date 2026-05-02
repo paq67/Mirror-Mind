@@ -80,16 +80,15 @@ export function EntropyBackground() {
     let time = 0
 
     const initializeParticles = (w: number, h: number) => {
-      const gridSize = 25
-      const spacing = Math.min(w, h) / gridSize
+      const spacing = 45
+      const columns = Math.ceil(w / spacing)
+      const rows = Math.ceil(h / spacing)
       particles = []
-      for (let i = 0; i < gridSize; i++) {
-        for (let j = 0; j < gridSize; j++) {
+      for (let i = 0; i < columns; i++) {
+        for (let j = 0; j < rows; j++) {
           const x = spacing * i + spacing / 2
           const y = spacing * j + spacing / 2
-          if (x < w && y < h) {
-            particles.push(new Particle(x, y, x < w / 2))
-          }
+          particles.push(new Particle(x, y, x < w / 2))
         }
       }
     }
