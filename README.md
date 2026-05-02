@@ -100,4 +100,3 @@ Mirror-Mind/
 └── railway.toml
 ---
 
-*Made with ☕ for the Shopify Hackathon*
