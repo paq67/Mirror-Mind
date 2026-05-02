@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, AlertCircle, ChevronDown, ChevronUp, Sparkles, Zap, Shield, KeyRound } from "lucide-react";
-import { Entropy } from "@/components/ui/entropy";
 
 // Flag fetched at runtime — reflects whether SHOPIFY_ADMIN_TOKEN is set server-side
 
@@ -25,9 +24,7 @@ export default function Home() {
   const [serverTokenConfigured, setServerTokenConfigured] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [size, setSize] = useState(800);
   useEffect(() => {
-    setSize(Math.max(window.innerWidth, window.innerHeight));
     fetch("/api/config")
       .then((r) => r.json())
       .then((data) => setServerTokenConfigured(data.shopifyConfigured))
@@ -59,11 +56,7 @@ export default function Home() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-black">
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Entropy size={size} />
-      </div>
-      <div className="relative z-10 min-h-screen bg-background/30 backdrop-blur-[1px] flex flex-col">
+    <div className="relative z-10 min-h-screen flex flex-col">
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
@@ -201,7 +194,6 @@ export default function Home() {
           </div>
         </div>
       </main>
-    </div>
     </div>
   );
 }

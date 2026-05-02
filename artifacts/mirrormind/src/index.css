@@ -175,7 +175,9 @@
     @apply border-border;
   }
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    @apply font-sans antialiased text-foreground;
+    background: #000000;
+    margin: 0;
   }
 }
 

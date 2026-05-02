@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { StoreProvider } from "@/lib/store-context";
 import { Layout } from "@/components/layout";
+import { EntropyBackground } from "@/components/ui/entropy-background";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
@@ -47,6 +48,7 @@ function App() {
       <StoreProvider>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <EntropyBackground />
             <AppRouter />
           </WouterRouter>
           <Toaster />
